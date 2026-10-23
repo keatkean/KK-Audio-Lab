@@ -1,0 +1,141 @@
+@* [EDUCATIONAL NOTE - Lab 2 S2 & Lab 6 S2]:
+   AddToPlaylistModal Component:
+   Demonstrates relational linking in LiteDB document stores. A track is added to a playlist by appending
+   its string ID to the Playlist's TrackIds array, submitted via PUT /api/playlists/{id}/tracks. *@
+
+@inject MusicApiClient MusicApi
+@inject AuthStateService AuthState
+
+@if (IsOpen && Track != null)
+{
+    <div class="modal-overlay" @onclick="Close">
+        <div class="modal-content" style="max-width: 480px;" @onclick:stopPropagation="true">
+            <div class="modal-header">
+                <div>
+                    <h3 class="modal-title">➕ Add to Playlist</h3>
+                    <p style="font-size: 0.8rem; color: var(--text-secondary); margin-top: 2px;">
+                        Adding: <strong style="color: var(--neon-cyan);">@Track.Title</strong>
+                    </p>
+                </div>
+                <button class="btn btn-secondary btn-icon" @onclick="Close">✕</button>
+            </div>
+
+            <div class="modal-body">
+                @if (isLoading)
+                {
+                    <div style="text-align: center; padding: 20px;">
+                        <span class="spinner"></span>
+                        <p style="color: var(--text-secondary); margin-top: 8px;">Loading student playlists...</p>
+                    </div>
+                }
+                else if (playlists.Count == 0)
+                {
+                    <div style="text-align: center; padding: 20px;">
+                        <p style="color: var(--text-secondary); margin-bottom: 12px;">No playlists found.</p>
+                        <a href="playlists" class="btn btn-outline-cyan btn-sm" @onclick="Close">Create First Playlist</a>
+                    </div>
+                }
+                else
+                {
+                    <div style="display: flex; flex-direction: column; gap: 8px;">
+                        @foreach (var pl in playlists)
+                        {
+                            var alreadyIn = pl.Tracks.Any(t => t.Id == Track.Id);
+                            <div style="display: flex; align-items: center; justify-content: space-between; background: rgba(255,255,255,0.03); padding: 10px 14px; border-radius: var(--radius-md); border: 1px solid var(--border-glass);">
+                                <div>
+                                    <div style="font-weight: 600; color: var(--text-primary); font-size: 0.92rem;">@pl.Title</div>
+                                    <div style="font-size: 0.75rem; color: var(--text-secondary);">@pl.TrackCount tracks • by @(pl.OwnerName ?? "Student")</div>
+                                </div>
+                                <button class="btn btn-sm @(alreadyIn ? "btn-secondary" : "btn-primary")"
+                                        disabled="@(alreadyIn || isAdding)"
+                                        @onclick="() => AddTrackToPlaylistAsync(pl)">
+                                    @(alreadyIn ? "✓ Added" : "Add")
+                                </button>
+                            </div>
+                        }
+                    </div>
+                }
+
+                @if (!string.IsNullOrEmpty(statusMessage))
+                {
+                    <div style="margin-top: 14px; padding: 8px 12px; background: rgba(0, 245, 160, 0.15); border: 1px solid rgba(0, 245, 160, 0.4); border-radius: var(--radius-sm); color: var(--neon-emerald); font-size: 0.8rem;">
+                        @statusMessage
+                    </div>
+                }
+            </div>
+
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" @onclick="Close">Done</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public TrackResponseDto? Track { get; set; }
+    [Parameter] public bool IsOpen { get; set; }
+    [Parameter] public EventCallback OnClose { get; set; }
+
+    private List<PlaylistResponseDto> playlists = new();
+    private bool isLoading = true;
+    private bool isAdding = false;
+    private string? statusMessage;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (IsOpen && Track != null)
+        {
+            statusMessage = null;
+            isLoading = true;
+            try
+            {
+                var user = await AuthState.GetSavedUserAsync();
+                var list = await MusicApi.GetPlaylistsAsync(user?.UserId);
+                playlists = list.ToList();
+            }
+            catch
+            {
+                playlists = new();
+            }
+            finally
+            {
+                isLoading = false;
+            }
+        }
+    }
+
+    private async Task AddTrackToPlaylistAsync(PlaylistResponseDto pl)
+    {
+        if (Track == null) return;
+
+        isAdding = true;
+        try
+        {
+            var currentIds = pl.Tracks.Select(t => t.Id).ToList();
+            if (!currentIds.Contains(Track.Id))
+            {
+                currentIds.Add(Track.Id);
+                var updated = await MusicApi.UpdatePlaylistTracksAsync(pl.Id, currentIds);
+                var idx = playlists.FindIndex(p => p.Id == pl.Id);
+                if (idx >= 0)
+                {
+                    playlists[idx] = updated;
+                }
+                statusMessage = $"Track added to '{pl.Title}'!";
+            }
+        }
+        catch (Exception ex)
+        {
+            statusMessage = $"Error: {ex.Message}";
+        }
+        finally
+        {
+            isAdding = false;
+        }
+    }
+
+    private async Task Close()
+    {
+        await OnClose.InvokeAsync();
+    }
+}

@@ -1,0 +1,55 @@
+@* [EDUCATIONAL NOTE - Lab 3 S2]:
+   ConfirmationModal Component:
+   Provides a safe confirmation dialog before executing destructive operations (like DELETE /api/tracks/{id}).
+   Employs clear visual hierarchy with danger accents and keyboard/backdrop cancellation. *@
+
+@if (IsOpen)
+{
+    <div class="modal-overlay" @onclick="HandleCancel">
+        <div class="modal-content" style="max-width: 440px;" @onclick:stopPropagation="true">
+            <div class="modal-header">
+                <h3 class="modal-title" style="color: #ff4d6d; display: flex; align-items: center; gap: 8px;">
+                    <span>⚠️</span> @Title
+                </h3>
+                <button class="btn btn-secondary btn-icon" @onclick="HandleCancel" disabled="@IsProcessing">✕</button>
+            </div>
+            <div class="modal-body">
+                <p style="color: var(--text-primary); font-size: 0.95rem; margin-bottom: 8px;">@Message</p>
+                @if (!string.IsNullOrEmpty(SubMessage))
+                {
+                    <p style="color: var(--text-secondary); font-size: 0.8rem; background: rgba(0,0,0,0.25); padding: 8px 12px; border-radius: var(--radius-sm); border-left: 3px solid #ff4d6d;">
+                        @SubMessage
+                    </p>
+                }
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" @onclick="HandleCancel" disabled="@IsProcessing">Cancel</button>
+                <button type="button" class="btn btn-danger" @onclick="HandleConfirm" disabled="@IsProcessing">
+                    @if (IsProcessing)
+                    {
+                        <span class="spinner" style="width: 14px; height: 14px;"></span>
+                        <span>Deleting...</span>
+                    }
+                    else
+                    {
+                        <span>@ConfirmButtonText</span>
+                    }
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public bool IsOpen { get; set; }
+    [Parameter] public string Title { get; set; } = "Confirm Action";
+    [Parameter] public string Message { get; set; } = "Are you sure you want to proceed?";
+    [Parameter] public string? SubMessage { get; set; }
+    [Parameter] public string ConfirmButtonText { get; set; } = "Confirm Delete";
+    [Parameter] public bool IsProcessing { get; set; }
+    [Parameter] public EventCallback OnConfirm { get; set; }
+    [Parameter] public EventCallback OnCancel { get; set; }
+
+    private async Task HandleConfirm() => await OnConfirm.InvokeAsync();
+    private async Task HandleCancel() => await OnCancel.InvokeAsync();
+}

@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>KK Audio Lab | Music Streaming & Audio Studio</title>
+    <base href="/" />
+    <link rel="preload" id="webassembly" />
+    <link rel="stylesheet" href="css/app.css" />
+    <link rel="icon" type="image/png" href="favicon.png" />
+    <link href="Frontend.styles.css" rel="stylesheet" />
+    <script type="importmap"></script>
+    <style>
+        /* Standalone initial boot spinner before WASM runtime initializes */
+        .initial-loader {
+            position: fixed;
+            inset: 0;
+            background: #07090e;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            font-family: 'Outfit', sans-serif;
+            color: #f8fafc;
+        }
+        .initial-logo {
+            font-size: 2.2rem;
+            font-weight: 800;
+            background: linear-gradient(135deg, #00f2fe 0%, #4facfe 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 12px;
+        }
+        .initial-pulse-ring {
+            width: 56px;
+            height: 56px;
+            border: 3px solid rgba(0, 242, 254, 0.2);
+            border-top-color: #00f2fe;
+            border-radius: 50%;
+            animation: initial-spin 0.8s linear infinite;
+            margin-bottom: 16px;
+        }
+        .initial-subtext {
+            color: #94a3b8;
+            font-size: 0.88rem;
+            letter-spacing: 0.05em;
+        }
+        @keyframes initial-spin {
+            to { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+
+<body>
+    <div id="app">
+        <div class="initial-loader">
+            <div class="initial-pulse-ring"></div>
+            <div class="initial-logo">KK AUDIO LAB</div>
+            <div class="initial-subtext">Initializing WebAssembly Audio Engine...</div>
+        </div>
+    </div>
+
+    <div id="blazor-error-ui" style="display:none;">
+        An unhandled error has occurred.
+        <a href="." class="reload">Reload</a>
+        <span class="dismiss">🗙</span>
+    </div>
+
+    <!-- JavaScript Audio Interop for HTTP 206 Byte-Range Streaming -->
+    <script src="js/audioInterop.js"></script>
+    <script src="_framework/blazor.webassembly#[.{fingerprint}].js"></script>
+</body>
+
+</html>

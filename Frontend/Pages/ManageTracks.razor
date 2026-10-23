@@ -1,0 +1,554 @@
+@page "/manage-tracks"
+@attribute [Authorize]
+
+@* [EDUCATIONAL NOTE - Lab 4 S1 & Lab 8 S1 & Lab 9 S2]:
+   Music Studio & Streaming File Upload Architecture:
+   1. Blazor <InputFile>: Renders an HTML5 <input type="file"> bound to the browser's File API.
+   2. Memory Safety: OpenReadStream(maxAllowedSize: 31_457_280) streams audio chunks directly from the
+      browser's native memory into the HTTP fetch request pipeline without buffering 30 MB into the
+      WebAssembly heap, preventing OutOfMemoryExceptions.
+   3. Automatic Metadata Pre-population: Selecting a file automatically parses its filename to seed the
+      'Title' field, reducing friction for students.
+   4. iTunes REST API Integration (Lab 9 S2): Students can search Apple's public music catalog
+      to automatically discover album art, album names, and release info without AI APIs.
+   5. Referential Integrity & Deletion (Lab 6 S2): Deleting a track purges both the LiteDB record
+      and physical file from Backend/AudioLibrary/, stops any active playback in PlayerStateService,
+      and invalidates client caches. *@
+
+@inject MusicApiClient MusicApi
+@inject ClientCacheService ClientCache
+@inject PlayerStateService PlayerState
+@inject AuthStateService AuthState
+
+<PageTitle>KK Audio Lab | Track Studio & CRUD</PageTitle>
+
+<div class="page-header">
+    <div class="page-title-group">
+        <h1>🎙️ Music Studio & Track CRUD</h1>
+        <p>Upload new audio files (.mp3, .wav, .ogg), auto-fill metadata via iTunes, and manage the server disk library.</p>
+    </div>
+
+    <div style="display: flex; gap: 10px; align-items: center;">
+        <button class="btn btn-outline-cyan btn-sm" @onclick="HandleRescanAsync" disabled="@isRescanning">
+            @if (isRescanning)
+            {
+                <span class="spinner" style="width: 14px; height: 14px;"></span>
+                <span>Scanning...</span>
+            }
+            else
+            {
+                <span>📁 Rescan Local Folder</span>
+            }
+        </button>
+        <button class="btn btn-secondary btn-sm" @onclick="() => LoadTracksAsync(forceRefresh: true)">
+            🔄 Refresh Studio
+        </button>
+    </div>
+</div>
+
+@if (!string.IsNullOrEmpty(feedbackMessage))
+{
+    <div style="background: @(isError ? "rgba(255, 51, 102, 0.15)" : "rgba(0, 245, 160, 0.15)"); border: 1px solid @(isError ? "rgba(255, 51, 102, 0.4)" : "rgba(0, 245, 160, 0.4)"); color: @(isError ? "#ff4d6d" : "var(--neon-emerald)"); padding: 14px 20px; border-radius: var(--radius-md); margin-bottom: 24px; display: flex; align-items: center; justify-content: space-between;">
+        <span>@(isError ? "⚠️" : "✅") @feedbackMessage</span>
+        <button class="btn btn-secondary btn-sm" style="padding: 2px 8px;" @onclick="() => feedbackMessage = null">✕</button>
+    </div>
+}
+
+<div style="display: grid; grid-template-columns: 1fr; gap: 32px;">
+    <!-- ======================================================================= -->
+    <!-- SECTION 1: UPLOAD NEW AUDIO TRACK (CREATE)                                -->
+    <!-- ======================================================================= -->
+    <div style="background: var(--bg-surface-elevated); border: 1px solid var(--border-glass); border-radius: var(--radius-lg); padding: 28px;">
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px;">
+            <div>
+                <h2 style="font-size: 1.35rem; font-weight: 700; color: var(--text-primary); display: flex; align-items: center; gap: 10px;">
+                    <span>📤</span> Upload New Audio Track
+                </h2>
+                <p style="color: var(--text-secondary); font-size: 0.85rem; margin-top: 2px;">
+                    Streams binary bytes directly via <code style="color: var(--neon-cyan);">MultipartFormDataContent</code> to <code style="color: var(--neon-cyan);">POST /api/tracks/upload</code>.
+                </p>
+            </div>
+            <span class="badge badge-cyan">Max 30 MB</span>
+        </div>
+
+        <!-- HTML5 File Input / Drag & Drop Target -->
+        <div class="upload-dropzone" style="margin-bottom: 24px;">
+            <div class="dropzone-icon">🎵</div>
+            <div class="dropzone-title">Select Audio File to Upload</div>
+            <div class="dropzone-hint">Supports MP3 (.mp3), Waveform (.wav), or Ogg Vorbis (.ogg)</div>
+            
+            <InputFile id="audioFileInput"
+                       OnChange="HandleFileSelected"
+                       accept=".mp3,.wav,.ogg"
+                       class="form-control"
+                       style="margin-top: 14px; max-width: 400px; margin-left: auto; margin-right: auto;" />
+
+            @if (selectedFile != null)
+            {
+                <div style="margin-top: 14px; display: inline-flex; align-items: center; gap: 10px; background: rgba(0, 242, 254, 0.1); border: 1px solid var(--border-accent); padding: 8px 16px; border-radius: var(--radius-full); font-size: 0.85rem; color: var(--neon-cyan);">
+                    <span>📁 @selectedFile.Name</span>
+                    <span>•</span>
+                    <span style="font-family: var(--font-mono);">@($"{selectedFile.Size / (1024.0 * 1024.0):F2} MB")</span>
+                    <span>•</span>
+                    <span>@(string.IsNullOrWhiteSpace(selectedFile.ContentType) ? "audio/mpeg" : selectedFile.ContentType)</span>
+                </div>
+            }
+        </div>
+
+        <!-- Optional: Third-Party iTunes Lookup (Non-AI Lab 9 S2) -->
+        <div style="background: rgba(0, 0, 0, 0.25); border: 1px solid var(--border-glass); border-radius: var(--radius-md); padding: 16px; margin-bottom: 24px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                <label style="font-size: 0.88rem; font-weight: 700; color: var(--neon-cyan); display: flex; align-items: center; gap: 8px;">
+                    <span>🍎</span> Auto-Fill Cover Art & Metadata via iTunes API (Non-AI)
+                </label>
+                <span class="badge badge-magenta" style="font-size: 0.65rem;">Lab 9 S2</span>
+            </div>
+            <p style="color: var(--text-secondary); font-size: 0.8rem; margin-bottom: 12px;">
+                Search Apple's public iTunes music directory to automatically populate song title, artist, album, and high-res cover art.
+            </p>
+            <div style="display: flex; gap: 10px;">
+                <input type="text"
+                       class="form-control"
+                       placeholder="e.g. Coldplay, JJ Lin, or Lofi Beats..."
+                       @bind="itunesQuery"
+                       @bind:event="oninput" />
+                <button type="button" class="btn btn-outline-cyan" @onclick="SearchItunesAsync" disabled="@isSearchingItunes">
+                    @if (isSearchingItunes)
+                    {
+                        <span class="spinner" style="width: 14px; height: 14px;"></span>
+                        <span>Searching...</span>
+                    }
+                    else
+                    {
+                        <span>Lookup iTunes</span>
+                    }
+                </button>
+            </div>
+
+            @if (itunesResults.Count > 0)
+            {
+                <div style="margin-top: 14px; display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 10px;">
+                    @foreach (var res in itunesResults)
+                    {
+                        <div style="background: rgba(255,255,255,0.03); border: 1px solid var(--border-glass); border-radius: var(--radius-md); padding: 10px; display: flex; align-items: center; justify-content: space-between; gap: 10px;">
+                            <img src="@res.CoverArtUrl" style="width: 44px; height: 44px; border-radius: 6px; object-fit: cover;" alt="" />
+                            <div style="flex: 1; overflow: hidden;">
+                                <div style="font-weight: 700; font-size: 0.85rem; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">@res.Title</div>
+                                <div style="font-size: 0.75rem; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">@res.Artist • @res.Album</div>
+                            </div>
+                            <button type="button" class="btn btn-primary btn-sm" @onclick="() => ApplyItunesMetadata(res)">
+                                Apply
+                            </button>
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+
+        <!-- Blazor EditForm for Track Upload -->
+        <EditForm Model="@uploadModel" OnValidSubmit="HandleUploadSubmit">
+            <DataAnnotationsValidator />
+
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 18px;">
+                <div class="form-group">
+                    <label class="form-label">Song Title *</label>
+                    <InputText class="form-control" @bind-Value="uploadModel.Title" placeholder="e.g. Sentosa Sunset Chill" />
+                    <ValidationMessage For="@(() => uploadModel.Title)" class="validation-message" />
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">Artist Name *</label>
+                    <InputText class="form-control" @bind-Value="uploadModel.Artist" placeholder="e.g. Polytechnic Beatmakers" />
+                    <ValidationMessage For="@(() => uploadModel.Artist)" class="validation-message" />
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">Album Name *</label>
+                    <InputText class="form-control" @bind-Value="uploadModel.Album" placeholder="e.g. SP SoundLab Vol 1" />
+                    <ValidationMessage For="@(() => uploadModel.Album)" class="validation-message" />
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">Mood Tag *</label>
+                    <InputSelect class="form-control" @bind-Value="uploadModel.MoodTag">
+                        <option value="Chill">Chill</option>
+                        <option value="Energetic">Energetic</option>
+                        <option value="Focus">Focus</option>
+                        <option value="Acoustic">Acoustic</option>
+                        <option value="Synthwave">Synthwave</option>
+                        <option value="Ambient">Ambient</option>
+                    </InputSelect>
+                    <ValidationMessage For="@(() => uploadModel.MoodTag)" class="validation-message" />
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">Beats Per Minute (BPM)</label>
+                    <InputNumber class="form-control" @bind-Value="uploadModel.Bpm" />
+                    <ValidationMessage For="@(() => uploadModel.Bpm)" class="validation-message" />
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">Bitrate (kbps)</label>
+                    <InputNumber class="form-control" @bind-Value="uploadModel.BitrateKbps" />
+                    <ValidationMessage For="@(() => uploadModel.BitrateKbps)" class="validation-message" />
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">Duration (seconds)</label>
+                    <InputNumber class="form-control" @bind-Value="uploadModel.DurationSeconds" />
+                    <ValidationMessage For="@(() => uploadModel.DurationSeconds)" class="validation-message" />
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">Cover Artwork URL</label>
+                    <InputText class="form-control" @bind-Value="uploadModel.CoverArtUrl" placeholder="https://..." />
+                    <ValidationMessage For="@(() => uploadModel.CoverArtUrl)" class="validation-message" />
+                </div>
+            </div>
+
+            <div style="margin-top: 24px; display: flex; justify-content: flex-end; gap: 14px;">
+                <button type="submit"
+                        class="btn btn-primary"
+                        style="padding: 12px 28px; font-size: 1rem;"
+                        disabled="@(isUploading || selectedFile == null)">
+                    @if (isUploading)
+                    {
+                        <span class="spinner" style="width: 18px; height: 18px;"></span>
+                        <span>Streaming File to Server (POST /api/tracks/upload)...</span>
+                    }
+                    else
+                    {
+                        <span>🚀 Upload & Save to Catalog</span>
+                    }
+                </button>
+            </div>
+        </EditForm>
+    </div>
+
+    <!-- ======================================================================= -->
+    <!-- SECTION 2: TRACK CATALOG MANAGEMENT TABLE (READ, UPDATE, DELETE)         -->
+    <!-- ======================================================================= -->
+    <div style="background: var(--bg-surface-elevated); border: 1px solid var(--border-glass); border-radius: var(--radius-lg); padding: 28px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 12px;">
+            <div>
+                <h2 style="font-size: 1.35rem; font-weight: 700; color: var(--text-primary); display: flex; align-items: center; gap: 10px;">
+                    <span>🗄️</span> Existing Tracks in Server Library
+                </h2>
+                <p style="color: var(--text-secondary); font-size: 0.85rem; margin-top: 2px;">
+                    Manage tracks stored in LiteDB and physical files on disk in <code style="color: var(--neon-cyan);">Backend/AudioLibrary/</code>.
+                </p>
+            </div>
+            <div class="badge badge-cyan badge-mono">
+                @tracksList.Count Total Tracks
+            </div>
+        </div>
+
+        @if (isLoadingTracks)
+        {
+            <div style="text-align: center; padding: 40px;">
+                <span class="spinner" style="width: 28px; height: 28px;"></span>
+                <p style="color: var(--text-secondary); margin-top: 10px;">Loading catalog tracks...</p>
+            </div>
+        }
+        else if (tracksList.Count == 0)
+        {
+            <div style="text-align: center; padding: 40px; background: rgba(0,0,0,0.2); border-radius: var(--radius-md);">
+                <p style="color: var(--text-secondary);">No audio tracks currently exist. Upload one above!</p>
+            </div>
+        }
+        else
+        {
+            <div style="overflow-x: auto;">
+                <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: 0.88rem;">
+                    <thead>
+                        <tr style="border-bottom: 1px solid var(--border-glass); color: var(--text-secondary); font-size: 0.78rem; text-transform: uppercase;">
+                            <th style="padding: 12px 14px;">Track</th>
+                            <th style="padding: 12px 14px;">Mood & BPM</th>
+                            <th style="padding: 12px 14px;">File / Size</th>
+                            <th style="padding: 12px 14px;">Duration</th>
+                            <th style="padding: 12px 14px; text-align: right;">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var track in tracksList)
+                        {
+                            <tr style="border-bottom: 1px solid rgba(255, 255, 255, 0.04); transition: background var(--trans-fast);" class="track-row">
+                                <td style="padding: 12px 14px;">
+                                    <div style="display: flex; align-items: center; gap: 12px;">
+                                        <img src="@(string.IsNullOrWhiteSpace(track.CoverArtUrl) ? $"https://picsum.photos/seed/{track.Id}/100" : track.CoverArtUrl)"
+                                             style="width: 40px; height: 40px; border-radius: var(--radius-sm); object-fit: cover;" alt="" />
+                                        <div>
+                                            <div style="font-weight: 700; color: var(--text-primary);">@track.Title</div>
+                                            <div style="font-size: 0.78rem; color: var(--text-secondary);">@track.Artist • @track.Album</div>
+                                        </div>
+                                    </div>
+                                </td>
+                                <td style="padding: 12px 14px;">
+                                    <div style="display: flex; gap: 6px; align-items: center;">
+                                        <span class="badge badge-cyan" style="font-size: 0.7rem;">@track.MoodTag</span>
+                                        <span style="font-family: var(--font-mono); font-size: 0.75rem; color: var(--text-muted);">@track.Bpm BPM</span>
+                                    </div>
+                                </td>
+                                <td style="padding: 12px 14px; font-family: var(--font-mono); font-size: 0.8rem; color: var(--text-secondary);">
+                                    <div>@track.FileName</div>
+                                    <div style="font-size: 0.72rem; color: var(--text-muted);">@($"{track.FileSizeBytes / (1024.0 * 1024.0):F2} MB")</div>
+                                </td>
+                                <td style="padding: 12px 14px; font-family: var(--font-mono); font-size: 0.8rem; color: var(--text-secondary);">
+                                    @FormatDuration(track.DurationSeconds)
+                                </td>
+                                <td style="padding: 12px 14px; text-align: right;">
+                                    <div style="display: inline-flex; gap: 6px;">
+                                        <button class="btn btn-secondary btn-sm" @onclick="() => PlayerState.PlayTrack(track, tracksList)" title="Play Track (HTTP 206)">
+                                            ▶️ Play
+                                        </button>
+                                        <button class="btn btn-outline-cyan btn-sm" @onclick="() => OpenEditModal(track)" title="Edit Metadata (PUT /api/tracks/{id})">
+                                            ✏️ Edit
+                                        </button>
+                                        <button class="btn btn-danger btn-sm" @onclick="() => OpenDeleteModal(track)" title="Delete Track (DELETE /api/tracks/{id})">
+                                            🗑️
+                                        </button>
+                                    </div>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </div>
+</div>
+
+<!-- Modal: Track Edit (PUT) -->
+<TrackEditModal IsOpen="@isEditModalOpen"
+                Track="@trackToEdit"
+                OnTrackUpdated="HandleTrackUpdated"
+                OnClose="() => isEditModalOpen = false" />
+
+<!-- Modal: Delete Confirmation (DELETE) -->
+<ConfirmationModal IsOpen="@isDeleteModalOpen"
+                   Title="Delete Track & Server File"
+                   Message="@($"Are you sure you want to permanently delete '{trackToDelete?.Title}'?")"
+                   SubMessage="This will erase the file from disk (Backend/AudioLibrary/) and remove all references in student playlists."
+                   ConfirmButtonText="Permanently Delete"
+                   IsProcessing="@isDeleting"
+                   OnConfirm="ExecuteDeleteTrackAsync"
+                   OnCancel="() => isDeleteModalOpen = false" />
+
+@code {
+    private UploadTrackFormModel uploadModel = new();
+    private IBrowserFile? selectedFile;
+    private bool isUploading = false;
+    private bool isError = false;
+    private string? feedbackMessage;
+
+    private List<TrackResponseDto> tracksList = new();
+    private bool isLoadingTracks = true;
+    private bool isRescanning = false;
+
+    // iTunes Metadata Lookup
+    private string itunesQuery = "";
+    private bool isSearchingItunes = false;
+    private List<ExternalMusicMetadataDto> itunesResults = new();
+
+    // Modals
+    private bool isEditModalOpen = false;
+    private TrackResponseDto? trackToEdit;
+    private bool isDeleteModalOpen = false;
+    private TrackResponseDto? trackToDelete;
+    private bool isDeleting = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadTracksAsync();
+    }
+
+    private async Task LoadTracksAsync(bool forceRefresh = false)
+    {
+        isLoadingTracks = true;
+        try
+        {
+            var tracks = await MusicApi.GetTracksAsync(forceRefresh);
+            tracksList = tracks.ToList();
+        }
+        catch (Exception ex)
+        {
+            SetFeedback($"Failed to load tracks: {ex.Message}", isError: true);
+        }
+        finally
+        {
+            isLoadingTracks = false;
+        }
+    }
+
+    private void HandleFileSelected(InputFileChangeEventArgs e)
+    {
+        var file = e.File;
+        if (file.Size > 31_457_280) // 30 MB limit
+        {
+            SetFeedback("Selected audio file exceeds the 30 MB maximum upload limit.", isError: true);
+            selectedFile = null;
+            return;
+        }
+
+        selectedFile = file;
+        feedbackMessage = null;
+
+        // Auto-populate Title from filename if empty
+        if (string.IsNullOrWhiteSpace(uploadModel.Title))
+        {
+            var rawName = Path.GetFileNameWithoutExtension(file.Name);
+            uploadModel.Title = rawName.Replace('_', ' ').Replace('-', ' ').Trim();
+        }
+
+        if (string.IsNullOrWhiteSpace(itunesQuery))
+        {
+            itunesQuery = uploadModel.Title;
+        }
+    }
+
+    private async Task SearchItunesAsync()
+    {
+        if (string.IsNullOrWhiteSpace(itunesQuery)) return;
+
+        isSearchingItunes = true;
+        try
+        {
+            var results = await MusicApi.SearchExternalMetadataAsync(itunesQuery);
+            itunesResults = results.Take(4).ToList();
+        }
+        catch (Exception ex)
+        {
+            SetFeedback($"iTunes search failed: {ex.Message}", isError: true);
+        }
+        finally
+        {
+            isSearchingItunes = false;
+        }
+    }
+
+    private void ApplyItunesMetadata(ExternalMusicMetadataDto meta)
+    {
+        uploadModel.Title = meta.Title;
+        uploadModel.Artist = meta.Artist;
+        uploadModel.Album = meta.Album;
+        uploadModel.CoverArtUrl = meta.CoverArtUrl;
+        itunesResults.Clear();
+        SetFeedback($"Applied iTunes metadata for '{meta.Title}'!", isError: false);
+    }
+
+    private async Task HandleUploadSubmit()
+    {
+        if (selectedFile == null)
+        {
+            SetFeedback("Please select an audio file (.mp3, .wav, .ogg) before submitting.", isError: true);
+            return;
+        }
+
+        isUploading = true;
+        feedbackMessage = null;
+
+        try
+        {
+            var created = await MusicApi.UploadTrackAsync(uploadModel, selectedFile);
+            SetFeedback($"Track '{created.Title}' successfully uploaded and indexed into LiteDB!", isError: false);
+
+            // Reset upload form
+            uploadModel = new UploadTrackFormModel();
+            selectedFile = null;
+            itunesResults.Clear();
+
+            // Refresh table
+            await LoadTracksAsync(forceRefresh: true);
+        }
+        catch (Exception ex)
+        {
+            SetFeedback($"Upload failed: {ex.Message}", isError: true);
+        }
+        finally
+        {
+            isUploading = false;
+        }
+    }
+
+    private async Task HandleRescanAsync()
+    {
+        isRescanning = true;
+        try
+        {
+            var res = await MusicApi.RescanLocalFolderAsync();
+            SetFeedback($"{res.Message} Discovered {res.NewlyAddedCount} new file(s).", isError: false);
+            await LoadTracksAsync(forceRefresh: true);
+        }
+        catch (Exception ex)
+        {
+            SetFeedback($"Rescan failed: {ex.Message}", isError: true);
+        }
+        finally
+        {
+            isRescanning = false;
+        }
+    }
+
+    private void OpenEditModal(TrackResponseDto track)
+    {
+        trackToEdit = track;
+        isEditModalOpen = true;
+    }
+
+    private void HandleTrackUpdated(TrackResponseDto updated)
+    {
+        var idx = tracksList.FindIndex(t => t.Id == updated.Id);
+        if (idx >= 0)
+        {
+            tracksList[idx] = updated;
+        }
+        SetFeedback($"Track '{updated.Title}' updated successfully.", isError: false);
+    }
+
+    private void OpenDeleteModal(TrackResponseDto track)
+    {
+        trackToDelete = track;
+        isDeleteModalOpen = true;
+    }
+
+    private async Task ExecuteDeleteTrackAsync()
+    {
+        if (trackToDelete == null) return;
+
+        isDeleting = true;
+        try
+        {
+            var success = await MusicApi.DeleteTrackAsync(trackToDelete.Id);
+            if (success)
+            {
+                tracksList.RemoveAll(t => t.Id == trackToDelete.Id);
+                SetFeedback($"Track '{trackToDelete.Title}' permanently deleted from database and disk.", isError: false);
+                isDeleteModalOpen = false;
+            }
+            else
+            {
+                SetFeedback("Could not delete track. Please check permissions.", isError: true);
+            }
+        }
+        catch (Exception ex)
+        {
+            SetFeedback($"Delete error: {ex.Message}", isError: true);
+        }
+        finally
+        {
+            isDeleting = false;
+        }
+    }
+
+    private void SetFeedback(string msg, bool isError)
+    {
+        feedbackMessage = msg;
+        this.isError = isError;
+    }
+
+    private static string FormatDuration(int totalSeconds)
+    {
+        var ts = TimeSpan.FromSeconds(totalSeconds);
+        return $"{(int)ts.TotalMinutes:D2}:{ts.Seconds:D2}";
+    }
+}

@@ -1,0 +1,301 @@
+@* [EDUCATIONAL NOTE - Lab 6 S2 & Lab 9 S1 & Lab 9 S2]:
+   TrackEditModal Component:
+   1. Blazor <EditForm>: Manages form submission, field validation, and validation state.
+   2. <DataAnnotationsValidator>: Executes validation rules defined in UpdateTrackDto (Required, Range, StringLength).
+   3. Live Sync: On submit, updates LiteDB via PUT /api/tracks/{id}, invalidates client cache,
+      and updates the bottom player bar immediately if the song is currently playing.
+   4. iTunes Search API Integration: Students can query Apple's public iTunes directory to auto-fill
+      album names, high-res artwork, and release info without manual typing.
+   5. Audio File Replacement: Supports updating the physical audio stream via PUT /api/tracks/{id}/audio. *@
+
+@inject MusicApiClient MusicApi
+
+@if (IsOpen && Track != null)
+{
+    <div class="modal-overlay" @onclick="HandleBackdropClick">
+        <div class="modal-content" @onclick:stopPropagation="true">
+            <div class="modal-header">
+                <div>
+                    <h2 class="modal-title">✏️ Edit Audio Track</h2>
+                    <p style="font-size: 0.8rem; color: var(--text-secondary); margin-top: 2px;">
+                        Document ID: <code style="color: var(--neon-cyan);">@Track.Id</code>
+                    </p>
+                </div>
+                <button class="btn btn-secondary btn-icon" @onclick="Close" title="Close Modal">✕</button>
+            </div>
+
+            <div class="modal-body">
+                @if (!string.IsNullOrEmpty(errorMessage))
+                {
+                    <div style="background: rgba(255, 51, 102, 0.15); border: 1px solid rgba(255, 51, 102, 0.4); color: #ff4d6d; padding: 12px 16px; border-radius: var(--radius-md); margin-bottom: 16px; font-size: 0.85rem;">
+                        ⚠️ @errorMessage
+                    </div>
+                }
+
+                @if (!string.IsNullOrEmpty(successMessage))
+                {
+                    <div style="background: rgba(0, 245, 160, 0.15); border: 1px solid rgba(0, 245, 160, 0.4); color: var(--neon-emerald); padding: 12px 16px; border-radius: var(--radius-md); margin-bottom: 16px; font-size: 0.85rem;">
+                        ✅ @successMessage
+                    </div>
+                }
+
+                <!-- Quick Metadata Discovery via iTunes (Lab 9 S2) -->
+                <div style="background: rgba(0, 242, 254, 0.05); border: 1px solid var(--border-accent); border-radius: var(--radius-md); padding: 14px; margin-bottom: 20px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                        <span style="font-size: 0.85rem; font-weight: 700; color: var(--neon-cyan);">
+                            🍎 iTunes Metadata Lookup (Non-AI)
+                        </span>
+                        <span class="badge badge-cyan" style="font-size: 0.65rem;">Lab 9 S2</span>
+                    </div>
+                    <div style="display: flex; gap: 8px;">
+                        <input type="text"
+                               class="form-control"
+                               placeholder="Search artist or song on iTunes..."
+                               @bind="searchQuery"
+                               @bind:event="oninput" />
+                        <button type="button" class="btn btn-outline-cyan btn-sm" @onclick="SearchItunesAsync" disabled="@isSearchingItunes">
+                            @if (isSearchingItunes)
+                            {
+                                <span class="spinner" style="width: 14px; height: 14px;"></span>
+                            }
+                            else
+                            {
+                                <span>Lookup</span>
+                            }
+                        </button>
+                    </div>
+
+                    @if (searchResults.Count > 0)
+                    {
+                        <div style="margin-top: 10px; max-height: 140px; overflow-y: auto; display: flex; flex-direction: column; gap: 6px;">
+                            @foreach (var res in searchResults)
+                            {
+                                <div style="display: flex; align-items: center; justify-content: space-between; background: rgba(0,0,0,0.3); padding: 6px 10px; border-radius: var(--radius-sm); font-size: 0.8rem;">
+                                    <div style="display: flex; align-items: center; gap: 8px; overflow: hidden;">
+                                        <img src="@res.CoverArtUrl" style="width: 28px; height: 28px; border-radius: 4px; object-fit: cover;" alt="" />
+                                        <span style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text-primary);">
+                                            <strong>@res.Title</strong> — @res.Artist (@res.Album)
+                                        </span>
+                                    </div>
+                                    <button type="button" class="btn btn-primary btn-sm" style="padding: 2px 8px; font-size: 0.72rem;" @onclick="() => ApplyExternalMetadata(res)">
+                                        Apply
+                                    </button>
+                                </div>
+                            }
+                        </div>
+                    }
+                </div>
+
+                <!-- Blazor EditForm with DataAnnotationsValidator -->
+                <EditForm Model="@editModel" OnValidSubmit="HandleValidSubmit">
+                    <DataAnnotationsValidator />
+
+                    <div class="form-group">
+                        <label class="form-label">Song Title *</label>
+                        <InputText class="form-control" @bind-Value="editModel.Title" placeholder="e.g. Marina Bay Chillhop" />
+                        <ValidationMessage For="@(() => editModel.Title)" class="validation-message" />
+                    </div>
+
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px;">
+                        <div class="form-group">
+                            <label class="form-label">Artist *</label>
+                            <InputText class="form-control" @bind-Value="editModel.Artist" placeholder="e.g. DJ Lion City" />
+                            <ValidationMessage For="@(() => editModel.Artist)" class="validation-message" />
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Album *</label>
+                            <InputText class="form-control" @bind-Value="editModel.Album" placeholder="e.g. Skyline Sessions" />
+                            <ValidationMessage For="@(() => editModel.Album)" class="validation-message" />
+                        </div>
+                    </div>
+
+                    <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px;">
+                        <div class="form-group">
+                            <label class="form-label">Mood Tag *</label>
+                            <InputSelect class="form-control" @bind-Value="editModel.MoodTag">
+                                <option value="Chill">Chill</option>
+                                <option value="Energetic">Energetic</option>
+                                <option value="Focus">Focus</option>
+                                <option value="Acoustic">Acoustic</option>
+                                <option value="Synthwave">Synthwave</option>
+                                <option value="Ambient">Ambient</option>
+                            </InputSelect>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">BPM (20-300)</label>
+                            <InputNumber class="form-control" @bind-Value="editModel.Bpm" />
+                            <ValidationMessage For="@(() => editModel.Bpm)" class="validation-message" />
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Bitrate (kbps)</label>
+                            <InputNumber class="form-control" @bind-Value="editModel.BitrateKbps" />
+                            <ValidationMessage For="@(() => editModel.BitrateKbps)" class="validation-message" />
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label">Cover Artwork URL</label>
+                        <InputText class="form-control" @bind-Value="editModel.CoverArtUrl" placeholder="https://..." />
+                        <ValidationMessage For="@(() => editModel.CoverArtUrl)" class="validation-message" />
+                    </div>
+
+                    <!-- Replace Audio File (Optional) -->
+                    <div style="border-top: 1px solid var(--border-glass); padding-top: 16px; margin-top: 16px;">
+                        <label class="form-label" style="display: flex; justify-content: space-between;">
+                            <span>Replace Physical Audio File (.mp3, .wav, .ogg)</span>
+                            <span style="color: var(--text-muted); font-size: 0.75rem;">Max 30 MB</span>
+                        </label>
+                        <InputFile OnChange="HandleReplacementFileSelected" accept=".mp3,.wav,.ogg" class="form-control" />
+                        @if (replacementFile != null)
+                        {
+                            <div style="margin-top: 6px; font-size: 0.78rem; color: var(--neon-cyan);">
+                                📁 Selected: @replacementFile.Name (@(replacementFile.Size / 1024 / 1024.0 < 1 ? $"{replacementFile.Size / 1024} KB" : $"{replacementFile.Size / (1024 * 1024.0):F2} MB"))
+                            </div>
+                        }
+                    </div>
+
+                    <div class="modal-footer" style="padding: 16px 0 0 0; margin-top: 20px;">
+                        <button type="button" class="btn btn-secondary" @onclick="Close" disabled="@isSaving">Cancel</button>
+                        <button type="submit" class="btn btn-primary" disabled="@isSaving">
+                            @if (isSaving)
+                            {
+                                <span class="spinner" style="width: 16px; height: 16px;"></span>
+                                <span>Saving Changes...</span>
+                            }
+                            else
+                            {
+                                <span>Save Changes (PUT)</span>
+                            }
+                        </button>
+                    </div>
+                </EditForm>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter]
+    public TrackResponseDto? Track { get; set; }
+
+    [Parameter]
+    public bool IsOpen { get; set; }
+
+    [Parameter]
+    public EventCallback<TrackResponseDto> OnTrackUpdated { get; set; }
+
+    [Parameter]
+    public EventCallback OnClose { get; set; }
+
+    private UpdateTrackDto editModel = new();
+    private bool isSaving = false;
+    private string? errorMessage;
+    private string? successMessage;
+    private IBrowserFile? replacementFile;
+
+    private string searchQuery = "";
+    private bool isSearchingItunes = false;
+    private List<ExternalMusicMetadataDto> searchResults = new();
+
+    protected override void OnParametersSet()
+    {
+        if (Track != null)
+        {
+            editModel = UpdateTrackDto.FromTrack(Track);
+            searchQuery = $"{Track.Title} {Track.Artist}".Trim();
+            errorMessage = null;
+            successMessage = null;
+            replacementFile = null;
+            searchResults.Clear();
+        }
+    }
+
+    private void HandleReplacementFileSelected(InputFileChangeEventArgs e)
+    {
+        if (e.File.Size > 31_457_280)
+        {
+            errorMessage = "Replacement audio file exceeds maximum allowed size of 30 MB.";
+            replacementFile = null;
+            return;
+        }
+
+        errorMessage = null;
+        replacementFile = e.File;
+    }
+
+    private async Task SearchItunesAsync()
+    {
+        if (string.IsNullOrWhiteSpace(searchQuery)) return;
+
+        isSearchingItunes = true;
+        try
+        {
+            var results = await MusicApi.SearchExternalMetadataAsync(searchQuery);
+            searchResults = results.Take(4).ToList();
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Metadata search failed: {ex.Message}";
+        }
+        finally
+        {
+            isSearchingItunes = false;
+        }
+    }
+
+    private void ApplyExternalMetadata(ExternalMusicMetadataDto metadata)
+    {
+        editModel.Title = metadata.Title;
+        editModel.Artist = metadata.Artist;
+        editModel.Album = metadata.Album;
+        editModel.CoverArtUrl = metadata.CoverArtUrl;
+        searchResults.Clear();
+    }
+
+    private async Task HandleValidSubmit()
+    {
+        if (Track == null) return;
+
+        isSaving = true;
+        errorMessage = null;
+        successMessage = null;
+
+        try
+        {
+            // 1. Update metadata
+            var updated = await MusicApi.UpdateTrackAsync(Track.Id, editModel);
+
+            // 2. If replacement file selected, upload new audio stream
+            if (replacementFile != null)
+            {
+                updated = await MusicApi.ReplaceTrackAudioAsync(Track.Id, replacementFile);
+            }
+
+            successMessage = "Track updated successfully!";
+            await Task.Delay(300);
+            await OnTrackUpdated.InvokeAsync(updated);
+            await Close();
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Update failed: {ex.Message}";
+        }
+        finally
+        {
+            isSaving = false;
+        }
+    }
+
+    private async Task Close()
+    {
+        await OnClose.InvokeAsync();
+    }
+
+    private async Task HandleBackdropClick()
+    {
+        if (!isSaving)
+        {
+            await Close();
+        }
+    }
+}

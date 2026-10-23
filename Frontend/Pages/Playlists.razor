@@ -1,0 +1,353 @@
+@page "/playlists"
+@attribute [Authorize]
+
+@* [EDUCATIONAL NOTE - Lab 2 S2 & Lab 6 S2]:
+   Playlist Management & LiteDB BsonRef Relational Linking:
+   1. In LiteDB, Playlist documents store an array of references: List<Track> Tracks [BsonRef("tracks")].
+   2. When querying GET /api/playlists/{id}, the backend executes .Include(x => x.Tracks)
+      to resolve the foreign references into full track metadata without storing redundant audio binaries.
+   3. Managing Playlist Tracks: Adding or removing a song from a playlist only updates the
+      Track ID list via PUT /api/playlists/{id}/tracks, preserving document isolation. *@
+
+@inject MusicApiClient MusicApi
+@inject PlayerStateService PlayerState
+@inject AuthStateService AuthState
+
+<PageTitle>KK Audio Lab | Student Playlists</PageTitle>
+
+<div class="page-header">
+    <div class="page-title-group">
+        <h1>📑 Student Playlists & Mixes</h1>
+        <p>Curate custom listening queues powered by LiteDB BsonRef document referencing.</p>
+    </div>
+
+    <button class="btn btn-primary btn-sm" @onclick="() => isCreateModalOpen = true">
+        ➕ Create New Playlist
+    </button>
+</div>
+
+@if (!string.IsNullOrEmpty(statusMessage))
+{
+    <div style="background: rgba(0, 245, 160, 0.12); border: 1px solid rgba(0, 245, 160, 0.4); border-radius: var(--radius-md); padding: 12px 18px; margin-bottom: 20px; color: var(--neon-emerald); display: flex; justify-content: space-between; align-items: center;">
+        <span>✅ @statusMessage</span>
+        <button class="btn btn-secondary btn-sm" style="padding: 2px 8px;" @onclick="() => statusMessage = null">✕</button>
+    </div>
+}
+
+@if (isLoading)
+{
+    <div style="text-align: center; padding: 60px 0;">
+        <span class="spinner" style="width: 32px; height: 32px;"></span>
+        <p style="color: var(--text-secondary); margin-top: 12px;">Loading playlists from LiteDB...</p>
+    </div>
+}
+else
+{
+    <div style="display: grid; grid-template-columns: 320px 1fr; gap: 24px; align-items: start;">
+        <!-- Left Column: Playlist Selector List -->
+        <div style="background: var(--bg-surface-elevated); border: 1px solid var(--border-glass); border-radius: var(--radius-lg); padding: 18px; display: flex; flex-direction: column; gap: 8px;">
+            <div style="font-size: 0.85rem; font-weight: 700; color: var(--text-secondary); text-transform: uppercase; margin-bottom: 8px;">
+                Your Playlists (@playlists.Count)
+            </div>
+
+            @if (playlists.Count == 0)
+            {
+                <p style="font-size: 0.85rem; color: var(--text-muted); padding: 10px 0;">
+                    No playlists found. Create one to begin organizing tracks!
+                </p>
+            }
+            else
+            {
+                @foreach (var pl in playlists)
+                {
+                    <div style="padding: 12px 14px; border-radius: var(--radius-md); cursor: pointer; border: 1px solid @(selectedPlaylist?.Id == pl.Id ? "var(--neon-cyan)" : "transparent"); background: @(selectedPlaylist?.Id == pl.Id ? "rgba(0, 242, 254, 0.1)" : "rgba(255,255,255,0.02)"); transition: all var(--trans-fast);"
+                         @onclick="() => SelectPlaylist(pl)">
+                        <div style="font-weight: 700; color: var(--text-primary); font-size: 0.95rem;">@pl.Title</div>
+                        <div style="font-size: 0.78rem; color: var(--text-secondary); margin-top: 2px;">
+                            @pl.TrackCount tracks • @FormatDuration(pl.TotalDurationSeconds)
+                        </div>
+                    </div>
+                }
+            }
+        </div>
+
+        <!-- Right Column: Active Playlist Details & Tracks -->
+        <div style="background: var(--bg-surface-elevated); border: 1px solid var(--border-glass); border-radius: var(--radius-lg); padding: 24px;">
+            @if (selectedPlaylist == null)
+            {
+                <div style="text-align: center; padding: 60px 20px; color: var(--text-secondary);">
+                    <div style="font-size: 3rem; margin-bottom: 12px;">📑</div>
+                    <h3>No Playlist Selected</h3>
+                    <p style="font-size: 0.9rem; margin-top: 4px;">Choose a playlist from the left or create a new mix.</p>
+                </div>
+            }
+            else
+            {
+                <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px; flex-wrap: wrap; gap: 14px; border-bottom: 1px solid var(--border-glass); padding-bottom: 18px;">
+                    <div>
+                        <h2 style="font-size: 1.5rem; font-weight: 800; color: var(--text-primary);">@selectedPlaylist.Title</h2>
+                        <p style="color: var(--text-secondary); font-size: 0.9rem; margin-top: 4px;">
+                            @(string.IsNullOrWhiteSpace(selectedPlaylist.Description) ? "No description provided." : selectedPlaylist.Description)
+                        </p>
+                        <div style="display: flex; gap: 12px; margin-top: 8px; font-size: 0.8rem; color: var(--text-muted); font-family: var(--font-mono);">
+                            <span>Creator: @(selectedPlaylist.OwnerName ?? "Student")</span>
+                            <span>•</span>
+                            <span>@selectedPlaylist.TrackCount tracks</span>
+                            <span>•</span>
+                            <span>Total: @FormatDuration(selectedPlaylist.TotalDurationSeconds)</span>
+                        </div>
+                    </div>
+
+                    <div style="display: flex; gap: 10px;">
+                        <button class="btn btn-primary btn-sm"
+                                disabled="@(selectedPlaylist.Tracks.Count == 0)"
+                                @onclick="PlayAllTracks">
+                            ▶️ Play Mix
+                        </button>
+                        <button class="btn btn-danger btn-sm" @onclick="() => isDeleteModalOpen = true">
+                            🗑️ Delete Playlist
+                        </button>
+                    </div>
+                </div>
+
+                @if (selectedPlaylist.Tracks.Count == 0)
+                {
+                    <div style="text-align: center; padding: 40px; background: rgba(0,0,0,0.2); border-radius: var(--radius-md);">
+                        <p style="color: var(--text-secondary); margin-bottom: 12px;">This playlist does not have any songs yet.</p>
+                        <a href="" class="btn btn-outline-cyan btn-sm">Browse Catalog & Add Tracks</a>
+                    </div>
+                }
+                else
+                {
+                    <div style="display: flex; flex-direction: column; gap: 8px;">
+                        @for (int i = 0; i < selectedPlaylist.Tracks.Count; i++)
+                        {
+                            var track = selectedPlaylist.Tracks[i];
+                            var index = i + 1;
+                            <div style="display: flex; align-items: center; justify-content: space-between; background: rgba(255,255,255,0.02); padding: 10px 14px; border-radius: var(--radius-md); border: 1px solid rgba(255,255,255,0.04); transition: background var(--trans-fast);">
+                                <div style="display: flex; align-items: center; gap: 14px; overflow: hidden;">
+                                    <span style="font-family: var(--font-mono); font-size: 0.8rem; color: var(--text-muted); width: 20px;">@index</span>
+                                    <img src="@(string.IsNullOrWhiteSpace(track.CoverArtUrl) ? $"https://picsum.photos/seed/{track.Id}/80" : track.CoverArtUrl)"
+                                         style="width: 36px; height: 36px; border-radius: 6px; object-fit: cover;" alt="" />
+                                    <div style="overflow: hidden;">
+                                        <div style="font-weight: 700; color: var(--text-primary); font-size: 0.9rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                                            @track.Title
+                                        </div>
+                                        <div style="font-size: 0.78rem; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                                            @track.Artist • @track.Album
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div style="display: flex; align-items: center; gap: 12px;">
+                                    <span style="font-family: var(--font-mono); font-size: 0.78rem; color: var(--text-muted);">
+                                        @FormatDuration(track.DurationSeconds)
+                                    </span>
+                                    <button class="btn btn-secondary btn-icon" style="width: 30px; height: 30px; font-size: 11px;"
+                                            @onclick="() => PlayerState.PlayTrack(track, selectedPlaylist.Tracks)"
+                                            title="Play Track">
+                                        ▶️
+                                    </button>
+                                    <button class="btn btn-danger btn-icon" style="width: 30px; height: 30px; font-size: 11px;"
+                                            @onclick="() => RemoveTrackFromPlaylistAsync(track.Id)"
+                                            title="Remove from Playlist">
+                                        ✕
+                                    </button>
+                                </div>
+                            </div>
+                        }
+                    </div>
+                }
+            }
+        </div>
+    </div>
+}
+
+<!-- Create Playlist Modal -->
+@if (isCreateModalOpen)
+{
+    <div class="modal-overlay" @onclick="() => isCreateModalOpen = false">
+        <div class="modal-content" style="max-width: 480px;" @onclick:stopPropagation="true">
+            <div class="modal-header">
+                <h3 class="modal-title">➕ Create New Playlist</h3>
+                <button class="btn btn-secondary btn-icon" @onclick="() => isCreateModalOpen = false">✕</button>
+            </div>
+            <EditForm Model="@createModel" OnValidSubmit="HandleCreatePlaylistSubmit">
+                <DataAnnotationsValidator />
+                <div class="modal-body">
+                    <div class="form-group">
+                        <label class="form-label">Playlist Title *</label>
+                        <InputText class="form-control" @bind-Value="createModel.Title" placeholder="e.g. Exam Cram Lo-Fi" />
+                        <ValidationMessage For="@(() => createModel.Title)" class="validation-message" />
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Description</label>
+                        <InputTextArea class="form-control" @bind-Value="createModel.Description" rows="3" placeholder="Notes or vibe for this playlist..." />
+                        <ValidationMessage For="@(() => createModel.Description)" class="validation-message" />
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" @onclick="() => isCreateModalOpen = false">Cancel</button>
+                    <button type="submit" class="btn btn-primary" disabled="@isSubmitting">
+                        @if (isSubmitting)
+                        {
+                            <span class="spinner" style="width: 14px; height: 14px;"></span>
+                            <span>Creating...</span>
+                        }
+                        else
+                        {
+                            <span>Create Playlist</span>
+                        }
+                    </button>
+                </div>
+            </EditForm>
+        </div>
+    </div>
+}
+
+<!-- Delete Playlist Confirmation Modal -->
+<ConfirmationModal IsOpen="@isDeleteModalOpen"
+                   Title="Delete Playlist"
+                   Message="@($"Are you sure you want to delete the playlist '{selectedPlaylist?.Title}'?")"
+                   SubMessage="The audio tracks themselves will not be deleted from the catalog."
+                   ConfirmButtonText="Delete Playlist"
+                   IsProcessing="@isDeletingPlaylist"
+                   OnConfirm="ExecuteDeletePlaylistAsync"
+                   OnCancel="() => isDeleteModalOpen = false" />
+
+@code {
+    private List<PlaylistResponseDto> playlists = new();
+    private PlaylistResponseDto? selectedPlaylist;
+    private bool isLoading = true;
+    private string? statusMessage;
+
+    private bool isCreateModalOpen = false;
+    private CreatePlaylistDto createModel = new();
+    private bool isSubmitting = false;
+
+    private bool isDeleteModalOpen = false;
+    private bool isDeletingPlaylist = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadPlaylistsAsync();
+    }
+
+    private async Task LoadPlaylistsAsync()
+    {
+        isLoading = true;
+        try
+        {
+            var user = await AuthState.GetSavedUserAsync();
+            var list = await MusicApi.GetPlaylistsAsync(user?.UserId);
+            playlists = list.ToList();
+
+            if (selectedPlaylist != null)
+            {
+                selectedPlaylist = playlists.FirstOrDefault(p => p.Id == selectedPlaylist.Id) ?? playlists.FirstOrDefault();
+            }
+            else
+            {
+                selectedPlaylist = playlists.FirstOrDefault();
+            }
+        }
+        catch (Exception ex)
+        {
+            statusMessage = $"Failed to load playlists: {ex.Message}";
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private void SelectPlaylist(PlaylistResponseDto pl)
+    {
+        selectedPlaylist = pl;
+    }
+
+    private void PlayAllTracks()
+    {
+        if (selectedPlaylist != null && selectedPlaylist.Tracks.Count > 0)
+        {
+            PlayerState.PlayTrack(selectedPlaylist.Tracks[0], selectedPlaylist.Tracks);
+        }
+    }
+
+    private async Task HandleCreatePlaylistSubmit()
+    {
+        isSubmitting = true;
+        try
+        {
+            var created = await MusicApi.CreatePlaylistAsync(createModel);
+            playlists.Add(created);
+            selectedPlaylist = created;
+            isCreateModalOpen = false;
+            createModel = new CreatePlaylistDto();
+            statusMessage = $"Playlist '{created.Title}' created!";
+        }
+        catch (Exception ex)
+        {
+            statusMessage = $"Failed to create playlist: {ex.Message}";
+        }
+        finally
+        {
+            isSubmitting = false;
+        }
+    }
+
+    private async Task RemoveTrackFromPlaylistAsync(string trackId)
+    {
+        if (selectedPlaylist == null) return;
+
+        try
+        {
+            var updatedIds = selectedPlaylist.Tracks.Where(t => t.Id != trackId).Select(t => t.Id).ToList();
+            var updated = await MusicApi.UpdatePlaylistTracksAsync(selectedPlaylist.Id, updatedIds);
+
+            var idx = playlists.FindIndex(p => p.Id == selectedPlaylist.Id);
+            if (idx >= 0)
+            {
+                playlists[idx] = updated;
+            }
+            selectedPlaylist = updated;
+            statusMessage = "Track removed from playlist.";
+        }
+        catch (Exception ex)
+        {
+            statusMessage = $"Failed to update playlist: {ex.Message}";
+        }
+    }
+
+    private async Task ExecuteDeletePlaylistAsync()
+    {
+        if (selectedPlaylist == null) return;
+
+        isDeletingPlaylist = true;
+        try
+        {
+            var success = await MusicApi.DeletePlaylistAsync(selectedPlaylist.Id);
+            if (success)
+            {
+                playlists.RemoveAll(p => p.Id == selectedPlaylist.Id);
+                selectedPlaylist = playlists.FirstOrDefault();
+                statusMessage = "Playlist deleted.";
+                isDeleteModalOpen = false;
+            }
+        }
+        catch (Exception ex)
+        {
+            statusMessage = $"Failed to delete playlist: {ex.Message}";
+        }
+        finally
+        {
+            isDeletingPlaylist = false;
+        }
+    }
+
+    private static string FormatDuration(int totalSeconds)
+    {
+        var ts = TimeSpan.FromSeconds(totalSeconds);
+        return $"{(int)ts.TotalMinutes:D2}:{ts.Seconds:D2}";
+    }
+}

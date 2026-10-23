@@ -1,0 +1,23 @@
+@* [EDUCATIONAL NOTE - Lab 9 S1 & Lab 8 S1]:
+   MainLayout Architecture:
+   1. Inherits LayoutComponentBase to provide the structural shell across all routed pages.
+   2. Persistent AudioPlayerBar: Placing <AudioPlayerBar /> in MainLayout guarantees that
+      HTTP 206 byte-range audio streaming continues uninterrupted when the student navigates
+      between pages (Home -> ManageTracks -> Playlists -> UAT Checklist).
+   3. Reactive State: All child components interact via shared Scoped services (PlayerStateService,
+      ClientCacheService, and AuthStateService). *@
+
+@inherits LayoutComponentBase
+
+<div class="app-container">
+    <!-- Sidebar Navigation -->
+    <NavMenu />
+
+    <!-- Main Routed Body -->
+    <main class="app-main">
+        @Body
+    </main>
+
+    <!-- Persistent Bottom Audio Player Bar -->
+    <AudioPlayerBar />
+</div>

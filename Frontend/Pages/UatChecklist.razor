@@ -1,0 +1,233 @@
+@page "/uat"
+@* [EDUCATIONAL NOTE - Lab 14 S2]:
+   User Acceptance Testing (UAT) & Verification Architecture:
+   1. UAT formalizes the verification that all functional, performance, and security requirements
+      are satisfied before deployment.
+   2. This interactive page provides 8 formal test scripts covering the complete Music Track CRUD
+      lifecycle, low-latency HTTP 206 streaming, cache invalidation, and JWT role-based security. *@
+
+@inject MusicApiClient MusicApi
+@inject ClientCacheService ClientCache
+@inject AuthStateService AuthState
+@inject PlayerStateService PlayerState
+
+<PageTitle>KK Audio Lab | Lab 14 S2 UAT Verification</PageTitle>
+
+<div class="page-header">
+    <div class="page-title-group">
+        <h1>🧪 Lab 14 S2: User Acceptance Testing (UAT)</h1>
+        <p>Interactive verification suite for KK Audio Lab Music Streaming WebApp (Blazor WebAssembly + ASP.NET Core 10).</p>
+    </div>
+
+    <div style="display: flex; gap: 10px; align-items: center;">
+        <div class="badge badge-cyan badge-mono">
+            Passed: @testScenarios.Count(s => s.Status == UatStatus.Passed) / @testScenarios.Count
+        </div>
+        <button class="btn btn-secondary btn-sm" @onclick="ResetAllTests">
+            🔄 Reset Checklist
+        </button>
+    </div>
+</div>
+
+<!-- Progress Bar -->
+<div style="background: rgba(255,255,255,0.06); height: 10px; border-radius: var(--radius-full); overflow: hidden; margin-bottom: 28px;">
+    <div style="background: var(--grad-emerald-cyan); height: 100%; width: @($"{ProgressPercent}%"); transition: width 0.3s ease;"></div>
+</div>
+
+<!-- Test Scenarios List -->
+<div style="display: flex; flex-direction: column; gap: 18px;">
+    @foreach (var test in testScenarios)
+    {
+        <div style="background: var(--bg-surface-elevated); border: 1px solid @(test.Status == UatStatus.Passed ? "rgba(0, 245, 160, 0.3)" : "var(--border-glass)"); border-radius: var(--radius-lg); padding: 22px; transition: all var(--trans-normal);">
+            <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 12px; margin-bottom: 12px;">
+                <div style="display: flex; align-items: center; gap: 12px;">
+                    <span style="font-family: var(--font-mono); font-size: 0.85rem; font-weight: 700; color: var(--neon-cyan);">
+                        @test.Id
+                    </span>
+                    <h3 style="font-size: 1.15rem; font-weight: 700; color: var(--text-primary);">
+                        @test.Title
+                    </h3>
+                </div>
+
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <span class="badge @(test.Status == UatStatus.Passed ? "badge-emerald" : test.Status == UatStatus.Failed ? "badge-magenta" : "badge-amber")">
+                        @(test.Status.ToString().ToUpper())
+                    </span>
+                    <button class="btn btn-sm @(test.Status == UatStatus.Passed ? "btn-secondary" : "btn-primary")"
+                            style="padding: 4px 10px; font-size: 0.78rem;"
+                            @onclick="() => ToggleStatus(test)">
+                        @(test.Status == UatStatus.Passed ? "Mark Pending" : "Mark Passed ✓")
+                    </button>
+                </div>
+            </div>
+
+            <div style="font-size: 0.88rem; color: var(--text-secondary); margin-bottom: 14px;">
+                @test.Description
+            </div>
+
+            <!-- Steps & Expected Results -->
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; background: rgba(0,0,0,0.25); padding: 14px 18px; border-radius: var(--radius-md); font-size: 0.82rem;">
+                <div>
+                    <strong style="color: var(--neon-cyan); display: block; margin-bottom: 4px;">Test Procedure:</strong>
+                    <ol style="margin-left: 18px; color: var(--text-secondary); display: flex; flex-direction: column; gap: 4px;">
+                        @foreach (var step in test.Steps)
+                        {
+                            <li>@step</li>
+                        }
+                    </ol>
+                </div>
+                <div>
+                    <strong style="color: var(--neon-emerald); display: block; margin-bottom: 4px;">Expected Outcome:</strong>
+                    <p style="color: var(--text-secondary);">@test.ExpectedOutcome</p>
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    public enum UatStatus { Pending, Passed, Failed }
+
+    public class UatScenario
+    {
+        public string Id { get; set; } = "";
+        public string Title { get; set; } = "";
+        public string Description { get; set; } = "";
+        public List<string> Steps { get; set; } = new();
+        public string ExpectedOutcome { get; set; } = "";
+        public UatStatus Status { get; set; } = UatStatus.Pending;
+    }
+
+    private List<UatScenario> testScenarios = new();
+
+    private double ProgressPercent =>
+        testScenarios.Count > 0 ? (testScenarios.Count(s => s.Status == UatStatus.Passed) / (double)testScenarios.Count) * 100.0 : 0;
+
+    protected override void OnInitialized()
+    {
+        testScenarios = new List<UatScenario>
+        {
+            new()
+            {
+                Id = "UAT-01",
+                Title = "JWT Student Authentication & LocalStorage Session",
+                Description = "Verifies student login with student@kkaudiolab.sg, JWT issuance, and persistence across browser reloads.",
+                Steps = new()
+                {
+                    "Navigate to /auth.",
+                    "Click 'One-Click Demo Sign In'.",
+                    "Verify token stored in localStorage ('kk_audio_jwt').",
+                    "Navigate to /manage-tracks; confirm authorization granted."
+                },
+                ExpectedOutcome = "HTTP 200 returned with JWT token; AuthStateService notifies <AuthorizeView> and unlocks protected studio routes."
+            },
+            new()
+            {
+                Id = "UAT-02",
+                Title = "Streaming Track Upload via <InputFile> (POST)",
+                Description = "Verifies streaming of local .mp3/.wav files directly to POST /api/tracks/upload without large memory allocations.",
+                Steps = new()
+                {
+                    "Navigate to /manage-tracks.",
+                    "Choose an .mp3 or .wav file (<30MB) using the file picker.",
+                    "Verify filename pre-fills Title input.",
+                    "Click 'Upload & Save to Catalog'."
+                },
+                ExpectedOutcome = "OpenReadStream streams bytes via MultipartFormDataContent; server writes to Backend/AudioLibrary/ and indexes into LiteDB."
+            },
+            new()
+            {
+                Id = "UAT-03",
+                Title = "Track Metadata Update & Live Player Sync (PUT)",
+                Description = "Verifies that updating track metadata (Title, Artist, MoodTag) reflects immediately in the UI and active bottom player.",
+                Steps = new()
+                {
+                    "Play a song from the catalog so it is active in AudioPlayerBar.",
+                    "Click 'Edit' on that song to open TrackEditModal.",
+                    "Change the Title to 'Updated Remix' and submit (PUT /api/tracks/{id}).",
+                    "Observe the sticky bottom player bar."
+                },
+                ExpectedOutcome = "LiteDB record is updated; ClientCacheService is invalidated; bottom player title updates live without interrupting playback."
+            },
+            new()
+            {
+                Id = "UAT-04",
+                Title = "Permanent Track Deletion & Player Cleanup (DELETE)",
+                Description = "Verifies that deleting a track deletes the LiteDB record, erases the disk file, and stops audio playback cleanly.",
+                Steps = new()
+                {
+                    "Start playing a track in the bottom player.",
+                    "Click 'Delete' on that same track.",
+                    "Confirm the delete action in the modal.",
+                    "Observe playback and inspect Backend/AudioLibrary/."
+                },
+                ExpectedOutcome = "Server returns HTTP 200; disk file erased; track removed from UI cache; PlayerStateService cleanly halts audio playback."
+            },
+            new()
+            {
+                Id = "UAT-05",
+                Title = "Local Folder Rescanning (POST /api/tracks/rescan)",
+                Description = "Verifies discovering unindexed audio files manually placed in Backend/AudioLibrary/.",
+                Steps = new()
+                {
+                    "Click 'Rescan Local Folder' in Catalog or Track Studio.",
+                    "Observe backend logs and response banner count."
+                },
+                ExpectedOutcome = "Server iterates through AudioLibrary/, indexes any unregistered .mp3/.wav files into LiteDB, and updates catalog."
+            },
+            new()
+            {
+                Id = "UAT-06",
+                Title = "HTTP 206 Partial Content Timeline Scrubbing",
+                Description = "Verifies byte-range scrubbing using Accept-Ranges, Content-Range, and dual-layer buffer visualization.",
+                Steps = new()
+                {
+                    "Play any audio track from the catalog.",
+                    "Click on the 50% mark of the player progress bar.",
+                    "Observe the dual-layer progress bar and latency badge."
+                },
+                ExpectedOutcome = "Browser sends 'Range: bytes=...'; server responds with HTTP 206; playback resumes instantly at requested timestamp."
+            },
+            new()
+            {
+                Id = "UAT-07",
+                Title = "Multi-Tier Client & Server Cache Invalidation",
+                Description = "Verifies ClientCacheService in-memory caching and automatic invalidation on mutating operations.",
+                Steps = new()
+                {
+                    "Visit Home page: first load shows 'CACHE MISS'.",
+                    "Navigate away and return: shows 'L1 CACHE HIT'.",
+                    "Upload or edit a track, then return: shows fresh data with automatic invalidation."
+                },
+                ExpectedOutcome = "Subsequent navigations hit in-memory client cache (0ms latency); mutations trigger InvalidateTracksCache() correctly."
+            },
+            new()
+            {
+                Id = "UAT-08",
+                Title = "Student Playlist CRUD & LiteDB BsonRef Linking",
+                Description = "Verifies creating playlists, appending track IDs via PUT /api/playlists/{id}/tracks, and playing queue.",
+                Steps = new()
+                {
+                    "Navigate to /playlists.",
+                    "Click 'Create New Playlist' (e.g. 'Study Lo-Fi').",
+                    "Browse catalog and click '➕ List' on tracks to add them.",
+                    "Return to /playlists and click 'Play Mix'."
+                },
+                ExpectedOutcome = "Playlist document stores referenced TrackIds; tracks load sequentially into PlayerStateService queue."
+            }
+        };
+    }
+
+    private void ToggleStatus(UatScenario scenario)
+    {
+        scenario.Status = scenario.Status == UatStatus.Passed ? UatStatus.Pending : UatStatus.Passed;
+    }
+
+    private void ResetAllTests()
+    {
+        foreach (var s in testScenarios)
+        {
+            s.Status = UatStatus.Pending;
+        }
+    }
+}

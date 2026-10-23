@@ -1,0 +1,134 @@
+@* [EDUCATIONAL NOTE - Lab 9 S1 & Lab 3 S2]:
+   Reusable TrackCard Component:
+   1. [Parameter] and EventCallback<T>: Enables component reusability and event-driven communication
+      with parent pages (Home.razor, ManageTracks.razor, Playlists.razor).
+   2. Conditional Styling: Automatically reflects active playback state by comparing Track.Id
+      against PlayerState.CurrentTrack?.Id to render the 'is-playing' glowing border and equalizer animation.
+   3. Micro-Interactions: Supports :hover overlay, quick play FAB, and direct actions for Edit and Delete. *@
+
+@inject PlayerStateService PlayerState
+
+<div class="track-card @(IsCurrentPlaying ? "is-playing" : "")">
+    <!-- Artwork & Hover Play Button -->
+    <div class="track-artwork-container">
+        <img src="@(string.IsNullOrWhiteSpace(Track.CoverArtUrl) ? $"https://picsum.photos/seed/{Track.Id}/300" : Track.CoverArtUrl)"
+             alt="@Track.Title cover"
+             class="track-artwork-img"
+             loading="lazy" />
+
+        <div class="track-overlay-actions">
+            <button class="play-fab" @onclick="HandlePlay" title="@(IsCurrentPlaying && PlayerState.IsPlaying ? "Pause" : "Play")">
+                @(IsCurrentPlaying && PlayerState.IsPlaying ? "⏸️" : "▶️")
+            </button>
+        </div>
+
+        @if (IsCurrentPlaying && PlayerState.IsPlaying)
+        {
+            <div style="position: absolute; top: 10px; right: 10px; background: rgba(0, 0, 0, 0.7); backdrop-filter: blur(8px); padding: 4px 8px; border-radius: var(--radius-full); border: 1px solid var(--border-accent);">
+                <div class="equalizer-anim">
+                    <div class="equalizer-bar"></div>
+                    <div class="equalizer-bar"></div>
+                    <div class="equalizer-bar"></div>
+                    <div class="equalizer-bar"></div>
+                </div>
+            </div>
+        }
+    </div>
+
+    <!-- Track Metadata Information -->
+    <div class="track-info">
+        <div class="track-title" title="@Track.Title">@Track.Title</div>
+        <div class="track-artist" title="@Track.Artist">@Track.Artist</div>
+
+        <div style="display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px;">
+            <span class="badge badge-cyan">@Track.MoodTag</span>
+            <span class="badge badge-mono" style="background: rgba(255,255,255,0.06); color: var(--text-secondary);">@Track.Bpm BPM</span>
+            <span class="badge badge-mono" style="background: rgba(255,255,255,0.06); color: var(--text-secondary);">@Track.BitrateKbps kbps</span>
+        </div>
+
+        <div class="track-meta-row">
+            <span>⏱️ @FormatDuration(Track.DurationSeconds)</span>
+            <span>💾 @FormatFileSize(Track.FileSizeBytes)</span>
+        </div>
+
+        @if (ShowManagementActions)
+        {
+            <div class="track-actions-row">
+                <button class="btn btn-secondary btn-sm" @onclick="HandleAddToPlaylist" title="Add to Playlist">
+                    ➕ List
+                </button>
+                <AuthorizeView>
+                    <Authorized>
+                        <button class="btn btn-outline-cyan btn-sm" @onclick="HandleEdit" title="Edit Track Metadata (PUT)">
+                            ✏️ Edit
+                        </button>
+                        <button class="btn btn-danger btn-sm" @onclick="HandleDelete" title="Delete Track (DELETE)">
+                            🗑️
+                        </button>
+                    </Authorized>
+                </AuthorizeView>
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired]
+    public TrackResponseDto Track { get; set; } = null!;
+
+    [Parameter]
+    public bool ShowManagementActions { get; set; } = true;
+
+    [Parameter]
+    public EventCallback<TrackResponseDto> OnPlay { get; set; }
+
+    [Parameter]
+    public EventCallback<TrackResponseDto> OnEdit { get; set; }
+
+    [Parameter]
+    public EventCallback<TrackResponseDto> OnDelete { get; set; }
+
+    [Parameter]
+    public EventCallback<TrackResponseDto> OnAddToPlaylist { get; set; }
+
+    private bool IsCurrentPlaying => PlayerState.CurrentTrack?.Id == Track.Id;
+
+    private async Task HandlePlay()
+    {
+        if (OnPlay.HasDelegate)
+        {
+            await OnPlay.InvokeAsync(Track);
+        }
+        else
+        {
+            PlayerState.PlayTrack(Track);
+        }
+    }
+
+    private async Task HandleEdit()
+    {
+        await OnEdit.InvokeAsync(Track);
+    }
+
+    private async Task HandleDelete()
+    {
+        await OnDelete.InvokeAsync(Track);
+    }
+
+    private async Task HandleAddToPlaylist()
+    {
+        await OnAddToPlaylist.InvokeAsync(Track);
+    }
+
+    private static string FormatDuration(int totalSeconds)
+    {
+        var ts = TimeSpan.FromSeconds(totalSeconds);
+        return $"{(int)ts.TotalMinutes:D2}:{ts.Seconds:D2}";
+    }
+
+    private static string FormatFileSize(long bytes)
+    {
+        if (bytes <= 0) return "0 MB";
+        return $"{bytes / (1024.0 * 1024.0):F1} MB";
+    }
+}

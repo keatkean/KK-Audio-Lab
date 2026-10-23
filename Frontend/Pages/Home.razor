@@ -1,0 +1,333 @@
+@page "/"
+@* [EDUCATIONAL NOTE - Lab 8 S2 & Lab 9 S1]:
+   Catalog View & High-Performance Virtualization:
+   1. <Virtualize>: Only renders DOM nodes for tracks currently visible in the browser viewport,
+      recycling component instances during scrolling to keep memory low and maintain 60 FPS.
+   2. ClientCacheService Integration: Tracks are retrieved from memory on repeat visits.
+      The UI visually flags Cache Hit vs Cache Miss to demonstrate client-side latency savings.
+   3. Reactive EventCallbacks: TrackCard dispatches Play, Edit, Delete, and Playlist actions
+      back to Home.razor, orchestrating modal popups and API invocations. *@
+
+@inject MusicApiClient MusicApi
+@inject ClientCacheService ClientCache
+@inject PlayerStateService PlayerState
+@inject NavigationManager NavManager
+
+<PageTitle>KK Audio Lab | Music Catalog</PageTitle>
+
+<div class="page-header">
+    <div class="page-title-group">
+        <h1>🎵 Audio Library Catalog</h1>
+        <p>Explore Singapore student beats, lo-fi study jams, and high-fidelity synthesized audio.</p>
+    </div>
+
+    <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+        <!-- Cache Hit / Miss Indicator (Lab 8 S2) -->
+        <div class="badge @(lastFetchWasCacheHit ? "badge-emerald" : "badge-amber") badge-mono"
+             title="Indicates whether catalog was loaded from in-memory ClientCacheService or fetched over HTTP">
+            @(lastFetchWasCacheHit ? "⚡ L1 CACHE HIT" : "🌐 CACHE MISS (API Fetch)")
+        </div>
+
+        <button class="btn btn-secondary btn-sm" @onclick="() => LoadTracksAsync(forceRefresh: true)" disabled="@isLoading" title="Force refresh catalog from server">
+            🔄 Refresh
+        </button>
+
+        <AuthorizeView>
+            <Authorized>
+                <button class="btn btn-outline-cyan btn-sm" @onclick="HandleRescanLocalFolder" disabled="@isRescanning" title="Scan Backend/AudioLibrary/ for new audio files">
+                    @if (isRescanning)
+                    {
+                        <span class="spinner" style="width: 14px; height: 14px;"></span>
+                        <span>Rescanning...</span>
+                    }
+                    else
+                    {
+                        <span>📁 Rescan Local Folder</span>
+                    }
+                </button>
+                <a href="manage-tracks" class="btn btn-primary btn-sm">
+                    ➕ Upload Song
+                </a>
+            </Authorized>
+            <NotAuthorized>
+                <a href="auth" class="btn btn-primary btn-sm">
+                    🔑 Student Login
+                </a>
+            </NotAuthorized>
+        </AuthorizeView>
+    </div>
+</div>
+
+<!-- Rescan / Success Banner Notification -->
+@if (!string.IsNullOrEmpty(rescanMessage))
+{
+    <div style="background: rgba(0, 245, 160, 0.12); border: 1px solid rgba(0, 245, 160, 0.4); border-radius: var(--radius-md); padding: 12px 18px; margin-bottom: 20px; display: flex; align-items: center; justify-content: space-between; color: var(--neon-emerald); font-size: 0.88rem;">
+        <span>📁 @rescanMessage</span>
+        <button class="btn btn-secondary btn-sm" style="padding: 2px 8px;" @onclick="() => rescanMessage = null">✕</button>
+    </div>
+}
+
+@if (!string.IsNullOrEmpty(toastMessage))
+{
+    <div style="background: rgba(0, 242, 254, 0.12); border: 1px solid var(--border-accent); border-radius: var(--radius-md); padding: 12px 18px; margin-bottom: 20px; display: flex; align-items: center; justify-content: space-between; color: var(--neon-cyan); font-size: 0.88rem;">
+        <span>ℹ️ @toastMessage</span>
+        <button class="btn btn-secondary btn-sm" style="padding: 2px 8px;" @onclick="() => toastMessage = null">✕</button>
+    </div>
+}
+
+<!-- Search & Mood Filter Toolbar -->
+<div class="toolbar-container">
+    <div class="search-input-wrapper">
+        <span class="search-icon">🔍</span>
+        <input type="text"
+               class="form-control search-input"
+               placeholder="Search tracks by title, artist, or album..."
+               @bind="searchTerm"
+               @bind:event="oninput"
+               @bind:after="ApplyFilters" />
+    </div>
+
+    <!-- Mood Filter Pills -->
+    <div class="mood-filter-pills">
+        @foreach (var mood in moodOptions)
+        {
+            <button class="mood-pill @(selectedMood == mood ? "active" : "")"
+                    @onclick="() => FilterByMood(mood)">
+                @mood
+            </button>
+        }
+    </div>
+
+    <div style="font-size: 0.8rem; color: var(--text-muted); font-family: var(--font-mono);">
+        Showing @filteredTracks.Count of @allTracks.Count tracks
+    </div>
+</div>
+
+<!-- Catalog Virtualized Grid -->
+@if (isLoading)
+{
+    <div style="text-align: center; padding: 60px 0;">
+        <div class="spinner" style="width: 36px; height: 36px; border-width: 3px; border-top-color: var(--neon-cyan);"></div>
+        <p style="color: var(--text-secondary); margin-top: 14px;">Loading audio catalog...</p>
+    </div>
+}
+else if (filteredTracks.Count == 0)
+{
+    <div style="text-align: center; padding: 60px 20px; background: var(--bg-glass-card); border-radius: var(--radius-lg); border: 1px solid var(--border-glass);">
+        <div style="font-size: 3rem; margin-bottom: 12px;">🎧</div>
+        <h3 style="font-size: 1.3rem; margin-bottom: 6px;">No Tracks Found</h3>
+        <p style="color: var(--text-secondary); max-width: 480px; margin: 0 auto 18px auto;">
+            @if (!string.IsNullOrWhiteSpace(searchTerm) || selectedMood != "All")
+            {
+                <span>No tracks matched your search criteria. Try adjusting your mood filter or search query.</span>
+            }
+            else
+            {
+                <span>The catalog is currently empty. Click "Rescan Local Folder" to discover files or upload a new track.</span>
+            }
+        </p>
+        <button class="btn btn-secondary btn-sm" @onclick="ClearFilters">Clear Filters</button>
+    </div>
+}
+else
+{
+    <div class="track-grid">
+        <Virtualize Items="@filteredTracks" Context="track" OverscanCount="4">
+            <TrackCard Track="@track"
+                       OnPlay="HandlePlayTrack"
+                       OnEdit="HandleOpenEditModal"
+                       OnDelete="HandleOpenDeleteModal"
+                       OnAddToPlaylist="HandleOpenAddToPlaylistModal" />
+        </Virtualize>
+    </div>
+}
+
+<!-- Track Edit Modal (PUT /api/tracks/{id}) -->
+<TrackEditModal IsOpen="@isEditModalOpen"
+                Track="@trackToEdit"
+                OnTrackUpdated="HandleTrackUpdated"
+                OnClose="() => isEditModalOpen = false" />
+
+<!-- Confirmation Modal for Delete (DELETE /api/tracks/{id}) -->
+<ConfirmationModal IsOpen="@isDeleteModalOpen"
+                   Title="Delete Audio Track"
+                   Message="@($"Are you sure you want to permanently delete '{trackToDelete?.Title}' by {trackToDelete?.Artist}?")"
+                   SubMessage="This action will delete the LiteDB metadata record and permanently erase the physical audio file from Backend/AudioLibrary/."
+                   ConfirmButtonText="Delete Track"
+                   IsProcessing="@isDeleting"
+                   OnConfirm="ExecuteDeleteTrackAsync"
+                   OnCancel="() => isDeleteModalOpen = false" />
+
+<!-- Add To Playlist Modal -->
+<AddToPlaylistModal IsOpen="@isAddToPlaylistOpen"
+                    Track="@trackToAddToPlaylist"
+                    OnClose="() => isAddToPlaylistOpen = false" />
+
+@code {
+    private List<TrackResponseDto> allTracks = new();
+    private List<TrackResponseDto> filteredTracks = new();
+    private string searchTerm = "";
+    private string selectedMood = "All";
+    private bool isLoading = true;
+    private bool isRescanning = false;
+    private bool lastFetchWasCacheHit = false;
+    private string? rescanMessage;
+    private string? toastMessage;
+
+    private readonly string[] moodOptions = { "All", "Chill", "Energetic", "Focus", "Acoustic", "Synthwave", "Ambient" };
+
+    // Modal States
+    private bool isEditModalOpen = false;
+    private TrackResponseDto? trackToEdit;
+
+    private bool isDeleteModalOpen = false;
+    private TrackResponseDto? trackToDelete;
+    private bool isDeleting = false;
+
+    private bool isAddToPlaylistOpen = false;
+    private TrackResponseDto? trackToAddToPlaylist;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadTracksAsync();
+    }
+
+    private async Task LoadTracksAsync(bool forceRefresh = false)
+    {
+        isLoading = true;
+        rescanMessage = null;
+        lastFetchWasCacheHit = ClientCache.HasValidCache && !forceRefresh;
+
+        try
+        {
+            var tracks = await MusicApi.GetTracksAsync(forceRefresh);
+            allTracks = tracks.ToList();
+            ApplyFilters();
+        }
+        catch (Exception ex)
+        {
+            toastMessage = $"Failed to load tracks: {ex.Message}";
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private void ApplyFilters()
+    {
+        var query = allTracks.AsEnumerable();
+
+        if (selectedMood != "All")
+        {
+            query = query.Where(t => string.Equals(t.MoodTag, selectedMood, StringComparison.OrdinalIgnoreCase));
+        }
+
+        if (!string.IsNullOrWhiteSpace(searchTerm))
+        {
+            query = query.Where(t =>
+                t.Title.Contains(searchTerm, StringComparison.OrdinalIgnoreCase) ||
+                t.Artist.Contains(searchTerm, StringComparison.OrdinalIgnoreCase) ||
+                t.Album.Contains(searchTerm, StringComparison.OrdinalIgnoreCase));
+        }
+
+        filteredTracks = query.ToList();
+    }
+
+    private void FilterByMood(string mood)
+    {
+        selectedMood = mood;
+        ApplyFilters();
+    }
+
+    private void ClearFilters()
+    {
+        searchTerm = "";
+        selectedMood = "All";
+        ApplyFilters();
+    }
+
+    private void HandlePlayTrack(TrackResponseDto track)
+    {
+        PlayerState.PlayTrack(track, filteredTracks);
+    }
+
+    private void HandleOpenEditModal(TrackResponseDto track)
+    {
+        trackToEdit = track;
+        isEditModalOpen = true;
+    }
+
+    private void HandleTrackUpdated(TrackResponseDto updated)
+    {
+        var idx = allTracks.FindIndex(t => t.Id == updated.Id);
+        if (idx >= 0)
+        {
+            allTracks[idx] = updated;
+            ApplyFilters();
+        }
+        toastMessage = $"Track '{updated.Title}' updated successfully.";
+    }
+
+    private void HandleOpenDeleteModal(TrackResponseDto track)
+    {
+        trackToDelete = track;
+        isDeleteModalOpen = true;
+    }
+
+    private async Task ExecuteDeleteTrackAsync()
+    {
+        if (trackToDelete == null) return;
+
+        isDeleting = true;
+        try
+        {
+            var success = await MusicApi.DeleteTrackAsync(trackToDelete.Id);
+            if (success)
+            {
+                allTracks.RemoveAll(t => t.Id == trackToDelete.Id);
+                ApplyFilters();
+                toastMessage = $"Track '{trackToDelete.Title}' permanently deleted.";
+                isDeleteModalOpen = false;
+            }
+            else
+            {
+                toastMessage = "Could not delete track. Please check permissions.";
+            }
+        }
+        catch (Exception ex)
+        {
+            toastMessage = $"Error deleting track: {ex.Message}";
+        }
+        finally
+        {
+            isDeleting = false;
+        }
+    }
+
+    private void HandleOpenAddToPlaylistModal(TrackResponseDto track)
+    {
+        trackToAddToPlaylist = track;
+        isAddToPlaylistOpen = true;
+    }
+
+    private async Task HandleRescanLocalFolder()
+    {
+        isRescanning = true;
+        rescanMessage = null;
+        try
+        {
+            var result = await MusicApi.RescanLocalFolderAsync();
+            rescanMessage = $"{result.Message} Discovered {result.NewlyAddedCount} new track(s).";
+            await LoadTracksAsync(forceRefresh: true);
+        }
+        catch (Exception ex)
+        {
+            toastMessage = $"Folder rescan failed: {ex.Message}";
+        }
+        finally
+        {
+            isRescanning = false;
+        }
+    }
+}

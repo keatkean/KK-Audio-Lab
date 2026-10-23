@@ -1,0 +1,79 @@
+@* [EDUCATIONAL NOTE - Lab 8 S1 & Lab 3 S2]:
+   NavMenu Component:
+   1. NavLink with Match="NavLinkMatch.All" or "NavLinkMatch.Prefix" dynamically applies active CSS classes.
+   2. AuthorizeView conditionally renders student profile info and auth actions based on the current JWT. *@
+
+@inject AuthStateService AuthState
+@inject NavigationManager NavManager
+
+<aside class="app-sidebar">
+    <!-- Brand Header -->
+    <div class="sidebar-brand">
+        <div class="brand-logo-icon">🎵</div>
+        <div class="brand-text">
+            <h1>KK Audio Lab</h1>
+            <span class="brand-tag">SG Student Studio</span>
+        </div>
+    </div>
+
+    <!-- Navigation Links -->
+    <nav class="sidebar-nav">
+        <NavLink class="nav-link-item" href="" Match="NavLinkMatch.All">
+            <span class="nav-icon">🎧</span>
+            <span>Music Catalog</span>
+        </NavLink>
+
+        <NavLink class="nav-link-item" href="manage-tracks">
+            <span class="nav-icon">🎙️</span>
+            <span>Track Studio</span>
+        </NavLink>
+
+        <NavLink class="nav-link-item" href="playlists">
+            <span class="nav-icon">📑</span>
+            <span>Playlists</span>
+        </NavLink>
+
+        <NavLink class="nav-link-item" href="uat">
+            <span class="nav-icon">🧪</span>
+            <span>UAT Checklist</span>
+        </NavLink>
+
+        <NavLink class="nav-link-item" href="auth">
+            <span class="nav-icon">🔑</span>
+            <span>Student Auth</span>
+        </NavLink>
+    </nav>
+
+    <!-- Student Session Footer -->
+    <div class="sidebar-footer">
+        <AuthorizeView>
+            <Authorized>
+                <div class="user-badge-widget">
+                    <div class="user-avatar">
+                        @(context.User.Identity?.Name?.Substring(0, 1).ToUpper() ?? "S")
+                    </div>
+                    <div class="user-details">
+                        <div class="user-name">@(context.User.Identity?.Name ?? "Student")</div>
+                        <div class="user-role">Student Member</div>
+                    </div>
+                    <button class="btn btn-secondary btn-icon" style="width: 28px; height: 28px; font-size: 11px;" @onclick="HandleLogout" title="Sign Out">
+                        🚪
+                    </button>
+                </div>
+            </Authorized>
+            <NotAuthorized>
+                <a href="auth" class="btn btn-outline-cyan btn-sm" style="width: 100%; justify-content: center;">
+                    🔑 Sign In
+                </a>
+            </NotAuthorized>
+        </AuthorizeView>
+    </div>
+</aside>
+
+@code {
+    private async Task HandleLogout()
+    {
+        await AuthState.LogoutAsync();
+        NavManager.NavigateTo("auth");
+    }
+}

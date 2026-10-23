@@ -1,0 +1,221 @@
+@page "/auth"
+@* [EDUCATIONAL NOTE - Lab 8 S1 & S2]:
+   Student Authentication & JWT Session Architecture:
+   1. Stateless Authentication: The server verifies student credentials (hashed with BCrypt / PBKDF2)
+      and issues an HMAC-SHA256 signed JSON Web Token (JWT).
+   2. Client Token Handling: The token is securely stored in localStorage via AuthStateService.
+   3. Claims Decoupling: Components use <AuthorizeView> to render content based on JWT claims
+      without querying the database repeatedly. *@
+
+@inject MusicApiClient MusicApi
+@inject AuthStateService AuthState
+@inject NavigationManager NavManager
+
+<PageTitle>KK Audio Lab | Student Authentication</PageTitle>
+
+<div style="max-width: 520px; margin: 40px auto; padding: 0 16px;">
+    <AuthorizeView Context="authContext">
+        <Authorized>
+            <!-- Authenticated Profile Card -->
+            <div style="background: var(--bg-surface-elevated); border: 1px solid var(--border-glass); border-radius: var(--radius-lg); padding: 32px; text-align: center; box-shadow: var(--shadow-card);">
+                <div class="user-avatar" style="width: 72px; height: 72px; font-size: 28px; margin: 0 auto 16px auto;">
+                    @(authContext.User.Identity?.Name?.Substring(0, 1).ToUpper() ?? "S")
+                </div>
+                <h2 style="font-size: 1.5rem; font-weight: 800; color: var(--text-primary); margin-bottom: 4px;">
+                    @(authContext.User.Identity?.Name ?? "Student Member")
+                </h2>
+                <div style="color: var(--neon-cyan); font-family: var(--font-mono); font-size: 0.85rem; margin-bottom: 14px;">
+                    @(authContext.User.FindFirst(System.Security.Claims.ClaimTypes.Email)?.Value ?? "student@kkaudiolab.sg")
+                </div>
+                <span class="badge badge-emerald" style="margin-bottom: 24px;">Active Session • Lab 8 S1</span>
+
+                <div style="display: flex; gap: 12px; justify-content: center;">
+                    <a href="manage-tracks" class="btn btn-primary btn-sm">
+                        🎙️ Go to Track Studio
+                    </a>
+                    <button class="btn btn-danger btn-sm" @onclick="HandleLogout">
+                        🚪 Sign Out
+                    </button>
+                </div>
+            </div>
+        </Authorized>
+        <NotAuthorized Context="notAuthContext">
+            <!-- Login / Register Card -->
+            <div style="background: var(--bg-surface-elevated); border: 1px solid var(--border-glass); border-radius: var(--radius-lg); padding: 32px; box-shadow: var(--shadow-card);">
+                <!-- Brand Header -->
+                <div style="text-align: center; margin-bottom: 24px;">
+                    <div class="brand-logo-icon" style="margin: 0 auto 12px auto;">🎵</div>
+                    <h1 style="font-size: 1.6rem; font-weight: 800; letter-spacing: -0.02em;">
+                        @(isRegisterMode ? "Create Student Account" : "Student Lab Access")
+                    </h1>
+                    <p style="color: var(--text-secondary); font-size: 0.85rem; margin-top: 4px;">
+                        Connect to KK Audio Lab Backend WebAPI (http://localhost:5100)
+                    </p>
+                </div>
+
+                <!-- One-Click Demo Login Banner (Fast Testing) -->
+                @if (!isRegisterMode)
+                {
+                    <div style="background: rgba(0, 242, 254, 0.08); border: 1px solid var(--border-accent); border-radius: var(--radius-md); padding: 14px; margin-bottom: 22px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                            <span style="font-size: 0.85rem; font-weight: 700; color: var(--neon-cyan);">
+                                ⚡ One-Click Demo Credentials
+                            </span>
+                            <span class="badge badge-cyan" style="font-size: 0.65rem;">Lab Seeded</span>
+                        </div>
+                        <div style="font-family: var(--font-mono); font-size: 0.75rem; color: var(--text-secondary); margin-bottom: 10px;">
+                            student@kkaudiolab.sg / Password123!
+                        </div>
+                        <button type="button" class="btn btn-primary btn-sm" style="width: 100%;" @onclick="ExecuteDemoLoginAsync" disabled="@isSubmitting">
+                            🚀 One-Click Demo Sign In
+                        </button>
+                    </div>
+                }
+
+                @if (!string.IsNullOrEmpty(errorMessage))
+                {
+                    <div style="background: rgba(255, 51, 102, 0.15); border: 1px solid rgba(255, 51, 102, 0.4); color: #ff4d6d; padding: 12px 16px; border-radius: var(--radius-md); margin-bottom: 18px; font-size: 0.85rem;">
+                        ⚠️ @errorMessage
+                    </div>
+                }
+
+                @if (isRegisterMode)
+                {
+                    <!-- Register Form -->
+                    <EditForm Model="@registerModel" OnValidSubmit="HandleRegisterSubmit">
+                        <DataAnnotationsValidator />
+                        <div class="form-group">
+                            <label class="form-label">Full Name *</label>
+                            <InputText class="form-control" @bind-Value="registerModel.FullName" placeholder="Tan Ah Kow" />
+                            <ValidationMessage For="@(() => registerModel.FullName)" class="validation-message" />
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Student Email *</label>
+                            <InputText class="form-control" @bind-Value="registerModel.Email" placeholder="student@kkaudiolab.sg" />
+                            <ValidationMessage For="@(() => registerModel.Email)" class="validation-message" />
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Password * (min 6 chars)</label>
+                            <InputText type="password" class="form-control" @bind-Value="registerModel.Password" placeholder="••••••••" />
+                            <ValidationMessage For="@(() => registerModel.Password)" class="validation-message" />
+                        </div>
+                        <button type="submit" class="btn btn-primary" style="width: 100%; margin-top: 14px;" disabled="@isSubmitting">
+                            @if (isSubmitting)
+                            {
+                                <span class="spinner" style="width: 16px; height: 16px;"></span>
+                                <span>Registering...</span>
+                            }
+                            else
+                            {
+                                <span>Create Account</span>
+                            }
+                        </button>
+                    </EditForm>
+                }
+                else
+                {
+                    <!-- Login Form -->
+                    <EditForm Model="@loginModel" OnValidSubmit="HandleLoginSubmit">
+                        <DataAnnotationsValidator />
+                        <div class="form-group">
+                            <label class="form-label">Student Email *</label>
+                            <InputText class="form-control" @bind-Value="loginModel.Email" placeholder="student@kkaudiolab.sg" />
+                            <ValidationMessage For="@(() => loginModel.Email)" class="validation-message" />
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Password *</label>
+                            <InputText type="password" class="form-control" @bind-Value="loginModel.Password" placeholder="••••••••" />
+                            <ValidationMessage For="@(() => loginModel.Password)" class="validation-message" />
+                        </div>
+                        <button type="submit" class="btn btn-primary" style="width: 100%; margin-top: 14px;" disabled="@isSubmitting">
+                            @if (isSubmitting)
+                            {
+                                <span class="spinner" style="width: 16px; height: 16px;"></span>
+                                <span>Authenticating...</span>
+                            }
+                            else
+                            {
+                                <span>Sign In to KK Audio Lab</span>
+                            }
+                        </button>
+                    </EditForm>
+                }
+
+                <!-- Switch Mode Footer -->
+                <div style="margin-top: 24px; text-align: center; font-size: 0.85rem; color: var(--text-secondary); border-top: 1px solid var(--border-glass); padding-top: 16px;">
+                    @if (isRegisterMode)
+                    {
+                        <span>Already registered? </span>
+                        <a href="javascript:void(0)" @onclick="() => isRegisterMode = false" style="font-weight: 600;">Sign in here</a>
+                    }
+                    else
+                    {
+                        <span>New student? </span>
+                        <a href="javascript:void(0)" @onclick="() => isRegisterMode = true" style="font-weight: 600;">Create an account</a>
+                    }
+                </div>
+            </div>
+        </NotAuthorized>
+    </AuthorizeView>
+</div>
+
+@code {
+    private bool isRegisterMode = false;
+    private bool isSubmitting = false;
+    private string? errorMessage;
+
+    private LoginRequestDto loginModel = new();
+    private RegisterRequestDto registerModel = new();
+
+    private async Task HandleLoginSubmit()
+    {
+        isSubmitting = true;
+        errorMessage = null;
+
+        try
+        {
+            await MusicApi.LoginAsync(loginModel);
+            NavManager.NavigateTo("manage-tracks");
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Login failed: {ex.Message}";
+        }
+        finally
+        {
+            isSubmitting = false;
+        }
+    }
+
+    private async Task ExecuteDemoLoginAsync()
+    {
+        loginModel.Email = "student@kkaudiolab.sg";
+        loginModel.Password = "Password123!";
+        await HandleLoginSubmit();
+    }
+
+    private async Task HandleRegisterSubmit()
+    {
+        isSubmitting = true;
+        errorMessage = null;
+
+        try
+        {
+            await MusicApi.RegisterAsync(registerModel);
+            NavManager.NavigateTo("manage-tracks");
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Registration failed: {ex.Message}";
+        }
+        finally
+        {
+            isSubmitting = false;
+        }
+    }
+
+    private async Task HandleLogout()
+    {
+        await AuthState.LogoutAsync();
+    }
+}
