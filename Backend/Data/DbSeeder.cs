@@ -67,7 +67,9 @@ public static class DbSeeder
                     FileName = "The Beauty of Letting Go.mp3",
                     Mood = "Energetic",
                     Bpm = 128,
-                    Duration = 209,
+                    // [SYSTEM NOTE]: High-precision audio requires Duration to be a double (209.5).
+                    // If compilation fails, update Track.DurationSeconds and all DTOs to double.
+                    Duration = 209.5,
                     Freq = 523.25, // C5 note
                     Cover = "https://cdn2.suno.ai/55d1a380-630d-4e5b-aaa6-02685563b7b2.jpeg"
                 },

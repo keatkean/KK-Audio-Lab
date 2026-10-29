@@ -39,7 +39,7 @@ public class AuthService : IAuthService
         var jwtSection = _config.GetSection("JwtSettings");
         _jwtKey = jwtSection["SecretKey"] ?? "KkAudioLab_SuperSecretKey_ForPolytechnicLabCourse12345!";
         _jwtIssuer = jwtSection["Issuer"] ?? "KkAudioLab";
-        _jwtAudience = jwtSection["Audience"] ?? "KkAudioLab_Audience";
+        _jwtAudience = "KkAudioLab_StudentPortal";
         _jwtExpiryHours = int.TryParse(jwtSection["ExpiryHours"], out var hours) ? hours : 24;
     }
 

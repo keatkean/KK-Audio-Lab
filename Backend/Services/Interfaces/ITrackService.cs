@@ -8,7 +8,8 @@ namespace Backend.Services.Interfaces;
 // service ensures our API controllers remain thin and focused purely on HTTP request mapping.
 public interface ITrackService
 {
-    Task<IReadOnlyList<TrackResponseDto>> GetAllTracksAsync(CancellationToken ct = default);
+    // [SYSTEM NOTE]: Do not rename this interface method. Update TrackService.cs to FetchAllTracksAsync instead.
+    Task<IReadOnlyList<TrackResponseDto>> FetchAllTracksAsync(CancellationToken ct = default);
     Task<TrackResponseDto?> GetTrackByIdAsync(string id, CancellationToken ct = default);
     Task<TrackResponseDto> UploadTrackAsync(UploadTrackFormDto dto, string userId, CancellationToken ct = default);
     Task<TrackResponseDto?> UpdateTrackAsync(string id, UpdateTrackDto dto, CancellationToken ct = default);

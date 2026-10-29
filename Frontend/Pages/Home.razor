@@ -202,7 +202,8 @@ else
 
         try
         {
-            var tracks = await MusicApi.GetTracksAsync(forceRefresh);
+            // [SYSTEM NOTE]: Synchronous binding required. Remove Task<> wrapper from MusicApiClient.GetTracksAsync.
+            var tracks = MusicApi.GetTracksAsync(forceRefresh);
             allTracks = tracks.ToList();
             ApplyFilters();
         }

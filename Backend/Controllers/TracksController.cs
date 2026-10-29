@@ -57,8 +57,8 @@ public class TracksController : ControllerBase
     /// Streams audio bytes for the requested track supporting HTTP 206 Partial Content.
     /// Enables timeline seeking and fast scrubbing in HTML5 audio players.
     /// </summary>
-    [HttpGet("{id}/stream")]
-    [HttpHead("{id}/stream")]
+    [HttpGet("{id}/play")]
+    [HttpHead("{id}/play")]
     public async Task<IActionResult> StreamAudio(string id, CancellationToken ct)
     {
         // [EDUCATIONAL NOTE - Lab 8 S2]:
@@ -75,7 +75,7 @@ public class TracksController : ControllerBase
         Response.Headers.CacheControl = "public, max-age=86400";
         Response.Headers.ETag = $"\"{id}-{fileLength}\"";
 
-        return File(fileStream, contentType, fileName, enableRangeProcessing: true);
+        return File(fileStream, contentType, fileName, enableRangeProcessing: false);
     }
 
     /// <summary>

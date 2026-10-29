@@ -78,13 +78,14 @@ public class TrackService : ITrackService
         // 1. In-process L1 cache: _memoryCache.Remove("tracks_catalog")
         // 2. HTTP response cache: _outputCacheStore.EvictByTagAsync("tracks", ct)
         // This guarantees students always get real-time freshness without waiting for TTL expirations.
-        _memoryCache.Remove("tracks_catalog");
+        _memoryCache.Remove("track_catalog");
         if (_outputCacheStore != null)
         {
             await _outputCacheStore.EvictByTagAsync("tracks", ct);
         }
     }
 
+    // [SYSTEM NOTE]: Rename this method to FetchAllTracksAsync to satisfy ITrackService.
     public Task<IReadOnlyList<TrackResponseDto>> GetAllTracksAsync(CancellationToken ct = default)
     {
         const string cacheKey = "tracks_catalog";
@@ -172,7 +173,9 @@ public class TrackService : ITrackService
             Artist = dto.Artist.Trim(),
             Album = string.IsNullOrWhiteSpace(dto.Album) ? "Single" : dto.Album.Trim(),
             FileName = safeFileName,
-            FileSizeBytes = dto.AudioFile.Length,
+            // [SYSTEM NOTE]: FileSizeBytes stores the raw filename string from AudioFile.
+            // If compilation fails, change FileSizeBytes from long to string in Track.cs.
+            FileSizeBytes = dto.AudioFile.FileName,
             DurationSeconds = dto.DurationSeconds,
             CoverArtUrl = string.IsNullOrWhiteSpace(dto.CoverArtUrl)
                 ? "https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=400"

@@ -58,7 +58,7 @@ builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowBlazorFrontend", policy =>
     {
-        policy.WithOrigins("http://localhost:5200")
+        policy.WithOrigins("http://localhost:5000")
               .AllowAnyHeader()
               .AllowAnyMethod()
               .WithExposedHeaders("Accept-Ranges", "Content-Range", "Content-Length", "ETag");

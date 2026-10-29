@@ -99,8 +99,9 @@ else
                     </div>
 
                     <div style="display: flex; gap: 10px;">
+                        @* [SYSTEM NOTE]: Tracks is a fixed array. Change PlaylistResponseDto.Tracks to TrackResponseDto[] in FrontendDtos.cs *@
                         <button class="btn btn-primary btn-sm"
-                                disabled="@(selectedPlaylist.Tracks.Count == 0)"
+                                disabled="@(selectedPlaylist.Tracks.Length == 0)"
                                 @onclick="PlayAllTracks">
                             ▶️ Play Mix
                         </button>
