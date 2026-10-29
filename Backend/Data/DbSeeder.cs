@@ -36,7 +36,7 @@ public static class DbSeeder
                 Id = Guid.NewGuid().ToString("N"),
                 Email = studentEmail,
                 PasswordHash = BCrypt.Net.BCrypt.HashPassword("Password123!", workFactor: 11),
-                FullName = "Alex Tan (Poly Student)",
+                FullName = "KK Audio Lab",
                 Role = "Student",
                 CreatedAtUtc = DateTime.UtcNow
             };
@@ -55,76 +55,65 @@ public static class DbSeeder
             Directory.CreateDirectory(audioDirPath);
         }
 
-        // 2. Seed 6 Playable Singapore-Themed Tracks if collection is empty
+        // 2. Seed 6 Playable Tracks if collection is empty
         if (tracksCol.Count() == 0)
         {
             var seedTracksData = new[]
             {
                 new {
-                    Title = "Majulah Beat",
-                    Artist = "Lion City Sound",
-                    Album = "Red Dot Anthems",
-                    FileName = "majulah_beat.wav",
+                    Title = "The Beauty of Letting Go",
+                    Artist = "KK Audio Lab",
+                    Album = "KK Audio Lab Greatest Hits",
+                    FileName = "The Beauty of Letting Go.mp3",
                     Mood = "Energetic",
                     Bpm = 128,
-                    Duration = 180,
+                    Duration = 209,
                     Freq = 523.25, // C5 note
-                    Cover = "https://images.unsplash.com/photo-1518709268805-4e9042af9f23?w=500"
+                    Cover = "https://cdn2.suno.ai/55d1a380-630d-4e5b-aaa6-02685563b7b2.jpeg"
                 },
                 new {
-                    Title = "Orchard Road Chill",
-                    Artist = "Somerset Vibes",
-                    Album = "City Lights SG",
-                    FileName = "orchard_road_chill.wav",
+                    Title = "蒲公英的告别",
+                    Artist = "KK Audio Lab",
+                    Album = "KK Audio Lab Greatest Hits",
+                    FileName = "蒲公英的告别.mp3",
                     Mood = "Chill",
                     Bpm = 95,
-                    Duration = 210,
+                    Duration = 241,
                     Freq = 440.00, // A4 note
                     Cover = "https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=500"
                 },
                 new {
-                    Title = "Marina Bay Sunrise",
-                    Artist = "Sentosa Waves",
-                    Album = "Island State of Mind",
-                    FileName = "marina_bay_sunrise.wav",
+                    Title = "擁抱這場雨",
+                    Artist = "KK Audio Lab",
+                    Album = "KK Audio Lab Greatest Hits",
+                    FileName = "擁抱這場雨.mp3",
                     Mood = "Ambient",
                     Bpm = 80,
-                    Duration = 240,
+                    Duration = 154,
                     Freq = 329.63, // E4 note
-                    Cover = "https://images.unsplash.com/photo-1508700115892-45ecd05ae2ad?w=500"
+                    Cover = "https://cdn2.suno.ai/09d5247e-9f8a-4ee4-881f-7c7ce0a17061.jpeg"
                 },
                 new {
-                    Title = "Changi Airport Rain",
-                    Artist = "Terminal Melodies",
-                    Album = "Jewel Rain Vortex",
-                    FileName = "changi_airport_rain.wav",
+                    Title = "Serendipity_ Tied to You",
+                    Artist = "KK Audio Lab",
+                    Album = "KK Audio Lab Greatest Hits",
+                    FileName = "Serendipity_ Tied to You.mp3",
                     Mood = "Lo-Fi",
                     Bpm = 75,
-                    Duration = 195,
+                    Duration = 252,
                     Freq = 392.00, // G4 note
-                    Cover = "https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=500"
+                    Cover = "https://cdn2.suno.ai/fd1d0a2a-d8cc-4fd2-a88a-0091f12d6cd5.jpeg"
                 },
                 new {
-                    Title = "Tiong Bahru Cafe",
-                    Artist = "Haji Lane Groove",
-                    Album = "Heritage Rhythms",
-                    FileName = "tiong_bahru_cafe.wav",
+                    Title = "独家花期",
+                    Artist = "KK Audio Lab",
+                    Album = "KK Audio Lab Greatest Hits",
+                    FileName = "独家花期.mp3",
                     Mood = "Study",
                     Bpm = 110,
-                    Duration = 165,
+                    Duration = 191,
                     Freq = 587.33, // D5 note
-                    Cover = "https://images.unsplash.com/photo-1447752875215-b2761acb3c5d?w=500"
-                },
-                new {
-                    Title = "Sentosa Sunset Groove",
-                    Artist = "East Coast Collective",
-                    Album = "Coastline Sunset",
-                    FileName = "sentosa_sunset_groove.wav",
-                    Mood = "Groove",
-                    Bpm = 118,
-                    Duration = 220,
-                    Freq = 659.25, // E5 note
-                    Cover = "https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=500"
+                    Cover = "https://cdn2.suno.ai/57b5cac5-5f0d-4e2f-9d34-8c9f5b36dd55.jpeg"
                 }
             };
 

@@ -132,13 +132,15 @@ else if (filteredTracks.Count == 0)
 else
 {
     <div class="track-grid">
-        <Virtualize Items="@filteredTracks" Context="track" OverscanCount="4">
-            <TrackCard Track="@track"
+        @foreach (var track in filteredTracks)
+        {
+            <TrackCard @key="track.Id"
+                       Track="@track"
                        OnPlay="HandlePlayTrack"
                        OnEdit="HandleOpenEditModal"
                        OnDelete="HandleOpenDeleteModal"
                        OnAddToPlaylist="HandleOpenAddToPlaylistModal" />
-        </Virtualize>
+        }
     </div>
 }
 
