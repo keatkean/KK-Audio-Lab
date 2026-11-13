@@ -12,13 +12,14 @@
 
 @inject PlayerStateService PlayerState
 @inject IJSRuntime JSRuntime
+@inject HttpClient Http
 @implements IDisposable
 
 <div class="audio-player-bar @(PlayerState.CurrentTrack == null ? "idle-player" : "")">
     <!-- Hidden HTML5 Audio Element controlled via JS Interop -->
     <audio @ref="audioElementRef"
            preload="metadata"
-           src="@(PlayerState.CurrentTrack != null ? $"http://localhost:5100/api/tracks/{PlayerState.CurrentTrack.Id}/stream" : null)">
+           src="@(PlayerState.CurrentTrack != null ? new Uri(Http.BaseAddress!, $"api/tracks/{PlayerState.CurrentTrack.Id}/stream").ToString() : null)">
     </audio>
 
     <!-- Dual-Layer Scrubbing Progress Bar -->
@@ -197,7 +198,11 @@
     {
         if (isJsInitialized)
         {
-            await JSRuntime.InvokeVoidAsync("audioInterop.prefetchTrack", streamUrl);
+            var resolvedUrl = Uri.TryCreate(streamUrl, UriKind.Absolute, out _)
+                ? streamUrl
+                : new Uri(Http.BaseAddress!, streamUrl.TrimStart('/')).ToString();
+
+            await JSRuntime.InvokeVoidAsync("audioInterop.prefetchTrack", resolvedUrl);
         }
     }
 

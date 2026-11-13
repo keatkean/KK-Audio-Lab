@@ -19,10 +19,17 @@ var builder = WebAssemblyHostBuilder.CreateDefault(args);
 builder.RootComponents.Add<App>("#app");
 builder.RootComponents.Add<HeadOutlet>("head::after");
 
-// Configure Backend API HttpClient pointing to http://localhost:5100
+// Configure Backend API HttpClient on port 5100 using the current browser host
+// (works automatically on both http://localhost:5200 and LAN IP access like http://192.168.x.x:5200)
+var backendBaseUri = new UriBuilder(builder.HostEnvironment.BaseAddress)
+{
+    Port = 5100,
+    Path = string.Empty
+}.Uri;
+
 builder.Services.AddScoped(sp => new HttpClient
 {
-    BaseAddress = new Uri("http://localhost:5100")
+    BaseAddress = backendBaseUri
 });
 
 // Register Core Authorization Infrastructure

@@ -10,6 +10,7 @@
 @inject MusicApiClient MusicApi
 @inject AuthStateService AuthState
 @inject NavigationManager NavManager
+@inject HttpClient Http
 
 <PageTitle>KK Audio Lab | Student Authentication</PageTitle>
 
@@ -49,7 +50,7 @@
                         @(isRegisterMode ? "Create Student Account" : "Student Lab Access")
                     </h1>
                     <p style="color: var(--text-secondary); font-size: 0.85rem; margin-top: 4px;">
-                        Connect to KK Audio Lab Backend WebAPI (http://localhost:5100)
+                        Connect to KK Audio Lab Backend WebAPI (@Http.BaseAddress?.ToString().TrimEnd('/'))
                     </p>
                 </div>
 

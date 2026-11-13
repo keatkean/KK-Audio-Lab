@@ -55,7 +55,15 @@ builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowBlazorFrontend", policy =>
     {
-        policy.WithOrigins("http://localhost:5200")
+        policy.SetIsOriginAllowed(origin =>
+              {
+                  if (!Uri.TryCreate(origin, UriKind.Absolute, out var uri))
+                      return false;
+
+                  // Allow frontend on port 5200 from localhost, LAN IP, or machine hostname
+                  return (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps)
+                         && uri.Port == 5200;
+              })
               .AllowAnyHeader()
               .AllowAnyMethod()
               .WithExposedHeaders("Accept-Ranges", "Content-Range", "Content-Length", "ETag");

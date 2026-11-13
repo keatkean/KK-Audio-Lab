@@ -23,7 +23,7 @@ The engineering team recently completed the new **.NET 10** platform (**ASP.NET 
 | **Backend API** | `Backend/` | ASP.NET Core 10 Web API, LiteDB (`kkaudiolab.db`), JWT Auth, HTTP 206 Audio Streaming | `http://localhost:5100` |
 | **Frontend App** | `Frontend/` | Blazor WebAssembly (`.NET 10`) SPA | `http://localhost:5200` |
 
-> **Note:** `Backend/Program.cs` is already configured for IIS hosting (`UseUrls` has been removed so IIS/ANCM manages the port binding). Keep ports `5100` (Backend) and `5200` (Frontend) on `localhost` so the existing CORS policy and API URLs work without code changes.
+> **Note:** The codebase is already configured for IIS hosting (`UseUrls` removed from `Backend/Program.cs`, dynamic API host resolution on port `5100` in `Frontend/`, and port-`5200` CORS support in `Backend/`). Both `http://localhost:5200` and LAN IP access (`http://<YOUR-IP>:5200`) work automatically once ports `5100` and `5200` are allowed in Windows Firewall.
 
 ---
 
@@ -51,6 +51,7 @@ Before signing off on **Ticket #DEPLOY-101** and demonstrating to your Tech Lead
 - [ ] `http://localhost:5200/` loads the Blazor WebAssembly frontend
 - [ ] Navigating to `http://localhost:5200/playlists` and pressing **F5** reloads cleanly (no `404` error)
 - [ ] Signing in on `/auth` with `student@kkaudiolab.sg` / `Password123!`, playing a track, and scrubbing the audio progress bar works
+- [ ] *(Bonus / LAN Test)* Opening `http://<YOUR-LAPTOP-IP>:5200` from a phone on the same Wi-Fi works after opening ports `5100` & `5200` in Windows Defender Firewall
 
 ---
 
