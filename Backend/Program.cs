@@ -13,9 +13,6 @@ using Microsoft.IdentityModel.Tokens;
 // configuration providers (appsettings.json, environment variables), and Kestrel web server.
 var builder = WebApplication.CreateBuilder(args);
 
-// Configure fixed local URL to http://localhost:5100
-builder.WebHost.UseUrls("http://localhost:5100");
-
 // ---------------------------------------------------------------------------
 // 1. DATABASE REGISTRATION (LiteDB - Lab 2 S2)
 // ---------------------------------------------------------------------------
