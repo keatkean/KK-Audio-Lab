@@ -1,12 +1,18 @@
 # KK Audio Lab — Local IIS Deployment Lab
 
-Welcome to the **KK Audio Lab** deployment lab. In this lab, you will publish and host a full-stack **.NET 10** application—an **ASP.NET Core 10 Web API** backend and a **Blazor WebAssembly** frontend—on your local **Windows 11 IIS (Internet Information Services)** web server.
+## Scenario: Your First Deployment Ticket as a DevOps / Software Intern
+
+You have just joined **KK Audio Lab**, a digital music streaming and audio studio company, as a **Junior Software / DevOps Intern**.
+
+The engineering team recently completed the new **.NET 10** platform (**ASP.NET Core 10 Web API** backend + **Blazor WebAssembly** frontend), which currently only runs in developer mode via Visual Studio or `run.bat`. Before the team pushes the release to the company's Windows Server staging environment, your Tech Lead has assigned you a deployment ticket:
+
+> **Ticket #DEPLOY-101:** *"Stand up a production-like local IIS environment on your Windows 11 workstation, deploy both the API and WebAssembly frontend without running Visual Studio, and verify that login, SPA page refreshes, 30 MB track uploads, and audio streaming all work reliably."*
 
 ---
 
 ## Lab Guide
 
-- **[Step-by-Step IIS Hosting Guide (Windows 11)](IIS_HOSTING_GUIDE.md)** — Follow this guide from Prerequisites through Verification.
+- **[Step-by-Step IIS Hosting Guide (Windows 11)](IIS_HOSTING_GUIDE.md)** — Your runbook from Prerequisites through Verification and Troubleshooting.
 
 ---
 
@@ -36,9 +42,9 @@ Welcome to the **KK Audio Lab** deployment lab. In this lab, you will publish an
 
 ---
 
-## Verification Checklist (Lab Completion)
+## Verification Checklist (Ticket Sign-Off)
 
-Before submitting or demonstrating your lab, make sure **Visual Studio** and `run.bat` are closed, then test in your browser:
+Before signing off on **Ticket #DEPLOY-101** and demonstrating to your Tech Lead, make sure **Visual Studio** and `run.bat` are closed, then verify in your browser:
 
 - [ ] `http://localhost:5100/` loads the **KK Audio Lab Health & Status Dashboard**
 - [ ] `http://localhost:5100/health` and `http://localhost:5100/api/tracks` return JSON
